@@ -1,133 +1,114 @@
-#!/usr/bin/env python3
-import os
-import sys
-from pathlib import Path
+import json
+import yaml
+from string import Template
+from schema import Schema, And, Use, Optional, Or
+import re
 
-try:
-    import yaml
-except ImportError:
-    print("Missing dependency: pyyaml", file=sys.stderr)
-    sys.exit(1)
+### TEMPLATES ###
 
-ROOT = Path(__file__).parent.resolve()
-CONFIG_PATH = ROOT / "ip_config.yml"
-OUT_CADDY = "/srv/appdata/edge/caddy_data/Caddyfile"
-OUT_CORE = "/srv/appdata/edge/coredns_data/Corefile"
+cf_dns_t = Template("""
+(cf_${cf_var}) {
+  tls {
+    dns cloudflare {env.${api_key_path}}
+  }
+}
+""")
+
+service_t = Template("""
+(${service}_common) {
+bind ${tailscale_ip}
+encode ${encodings}
+${reverse_proxies}
+}
+""")
+
+rproxy_t = Template("""
+reverse_proxy ${path} ${ip}:${port}
+""")
+
+mixer_t = Template("""
+${service}.${domain} {
+  import ${cf_var}
+  import ${common_var}
+}
+""")
+
+### VALIDATION SCHEMAS ###
+
+IP_REGEX = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$|localhost"
+
+main_yaml = Schema({
+    'tailscale_ip': And(str, lambda s: re.match(IP_REGEX, s)),
+
+    'cf_setup': And(
+        dict, lambda d: len(d) > 0,
+        {
+            str: {
+                'env_name': str
+                }
+        }
+    ),
+
+    'services': And(
+            dict,
+            lambda d: len(d) > 0,             
+            {
+                str: {
+                    Optional('encodings'): [str], 
+                    'reverse_proxy': And(
+                        list,
+                        lambda l: len(l) > 0,  
+                        [{                     
+                            'address': And(str, lambda s: re.match(IP_REGEX, s)),
+                            'port': int,
+                            Optional('path'): str
+                        }]
+                    )
+                }
+            }
+        )
+    })
+
+### MAIN FILE ###
+
+with open('ip.yaml', 'r') as f:
+    data = yaml.load(f, Loader=yaml.SafeLoader)
 
 
-def require(d, key, ctx=""):
-    if key not in d:
-        raise KeyError(f"Missing required key '{key}'{(' in ' + ctx) if ctx else ''}")
-    return d[key]
+try: 
+    main_yaml.validate(data)
+except SchemaError as e:
+    print(f"Validation failed: {e}")
 
-def caddy_escape(s: str) -> str:
-    return s.replace("\\", "\\\\").replace('"', '\\"')
 
-def main():
-    cfg = yaml.safe_load(CONFIG_PATH.read_text())
-    tailscale_ip = require(cfg, "tailscale_ip", "root")
 
-    tls_profiles = require(cfg, "tls_profiles", "root")
-    services = require(cfg, "services", "root")
-    domains = require(cfg, "domains", "root")
 
-    # --- Build Caddyfile ---
-    caddy_lines = []
-    caddy_lines.append("# GENERATED FILE - DO NOT EDIT")
-    caddy_lines.append("# Source: config.yml")
-    caddy_lines.append("")
+domain_list = data['cf_setup'].keys()
+common_list = data['services'].keys()
+TAILSCALE_IP = data['tailscale_ip']
 
-    # TLS snippets
-    for prof_name, prof in tls_profiles.items():
-        env_var = require(prof, "env_var", f"tls_profiles.{prof_name}")
-        caddy_lines.append(f"(cf_{prof_name}) {{")
-        caddy_lines.append("  tls {")
-        caddy_lines.append(f"    dns cloudflare {{env.{env_var}}}")
-        caddy_lines.append("  }")
-        caddy_lines.append("}")
-        caddy_lines.append("")
+gen_file_str = ""
+for key, val in data['cf_setup'].items():
+    gen_file_str += cf_dns_t.substitute(cf_var=key, api_key_path=val)
 
-    # Service snippets (so upstream lives once)
-    for svc_name, svc in services.items():
-        upstream = require(svc, "upstream", f"services.{svc_name}")
-        encode = svc.get("encode", [])
-        proxmox = bool(svc.get("proxmox", False))
 
-        caddy_lines.append(f"({svc_name}_common) {{")
-        caddy_lines.append(f"  bind {tailscale_ip}")
-        if encode:
-            caddy_lines.append("  encode " + " ".join(encode))
-        if proxmox:
-            # Proxmox-specific reverse proxy settings
-            caddy_lines.append(f"  reverse_proxy {upstream} {{")
-            caddy_lines.append("    transport http {")
-            caddy_lines.append("      tls_insecure_skip_verify")
-            caddy_lines.append("    }")
-            caddy_lines.append("    header_up Host {host}")
-            caddy_lines.append("    header_up X-Forwarded-Proto https")
-            caddy_lines.append("    header_up X-Forwarded-Host {host}")
-            caddy_lines.append("    header_up X-Forwarded-Port 443")
-            caddy_lines.append("  }")
-        else:
-            caddy_lines.append(f"  reverse_proxy {upstream}")
-        caddy_lines.append("}")
-        caddy_lines.append("")
 
-    # Sites
-    for d in domains:
-        domain_name = require(d, "name", "domains[]")
-        tls_profile = require(d, "tls_profile", f"domains[{domain_name}]")
-        svc_list = require(d, "services", f"domains[{domain_name}]")
-        if tls_profile not in tls_profiles:
-            raise KeyError(f"domains[{domain_name}].tls_profile '{tls_profile}' not found in tls_profiles")
 
-        for svc_name in svc_list:
-            if svc_name not in services:
-                raise KeyError(f"domains[{domain_name}] references unknown service '{svc_name}'")
-            host = f"{svc_name}.{domain_name}"
-            caddy_lines.append(f"{host} {{")
-            caddy_lines.append(f"  import cf_{tls_profile}")
-            caddy_lines.append(f"  import {svc_name}_common")
-            caddy_lines.append("}")
-            caddy_lines.append("")
+for key, val in data['services'].items():
+    rev = ""
+    for p in val['reverse_proxy']:
+        path=p.get("path", "")
+        rev += rproxy_t.safe_substitute(path=path,ip=p["address"],port=p["port"])
 
-    with open(OUT_CADDY, 'w') as f:
-        f.write("\n".join(caddy_lines))
+    gen_file_str += service_t.substitute(service=key, tailscale_ip=TAILSCALE_IP, encodings=' '.join(val['encodings']), reverse_proxies=rev)
 
-    # --- Build Corefile ---
-    core_lines = []
-    core_lines.append("# GENERATED FILE - DO NOT EDIT")
-    core_lines.append("# Source: config.yml")
-    core_lines.append("")
-    core_lines.append(".:53 {")
-    core_lines.append("  errors")
-    core_lines.append("  log")
-    core_lines.append("  health")
-    core_lines.append("  ready")
-    core_lines.append("")
 
-    # Use explicit host mappings to preserve flexibility and avoid collisions.
-    # The hosts plugin is simplest and fast.
-    core_lines.append("  hosts {")
-    for d in domains:
-        domain_name = require(d, "name", "domains[]")
-        svc_list = require(d, "services", f"domains[{domain_name}]")
-        names = [f"{svc}.{domain_name}" for svc in svc_list]
-        if names:
-            core_lines.append(f"    {tailscale_ip} " + " ".join(names))
-    core_lines.append("    fallthrough")
-    core_lines.append("  }")
-    core_lines.append("")
-    core_lines.append("  forward . 1.1.1.1 8.8.8.8")
-    core_lines.append("  cache 30")
-    core_lines.append("}")
-    core_lines.append("")
 
-    with open(OUT_CORE, 'w') as f:
-        f.write("\n".join(core_lines))
 
-    print(f"Wrote: {OUT_CADDY}")
-    print(f"Wrote: {OUT_CORE}")
 
-if __name__ == "__main__":
-    main()
+for i in common_list:
+    for b in domain_list:
+        gen_file_str += mixer_t.substitute(service=i,domain=b,cf_var='cf_'+b,common_var=i+'_common')
+
+
+print(gen_file_str)

@@ -1,0 +1,4 @@
+data/
+.env
+ip_config.*
+*pem

@@ -1,0 +1,38 @@
+services:
+  generator:
+    image: python:3.12-alpine
+    container_name: edge-generator
+    working_dir: /work
+    volumes:
+      - ./:/work
+    command: >
+      sh -c "pip install --no-cache-dir --root-user-action=ignore pyyaml &&
+             python /work/generator.py"
+
+  coredns:
+    image: coredns/coredns:1.11.1
+    container_name: coredns
+    restart: unless-stopped
+    network_mode: "host"
+    volumes:
+      - ./data/coredns_data/Corefile:/Corefile:ro
+    command: -conf /Corefile
+    depends_on:
+      generator:
+        condition: service_completed_successfully
+
+  caddy:
+    build:
+      context: ./caddy
+    container_name: caddy
+    restart: unless-stopped
+    network_mode: "host"
+    env_file:
+      - ./.env
+    volumes:
+      - ./data/caddy_data/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy_data:/data
+      - ./data/caddy_config:/config
+    depends_on:
+      generator:
+        condition: service_completed_successfully

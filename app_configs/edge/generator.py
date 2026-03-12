@@ -7,7 +7,7 @@ import re
 ### TEMPLATES ###
 
 cf_dns_t = Template("""
-(cf_${cf_var}) {
+(${cf_var}) {
   tls {
     dns cloudflare {env.${api_key_path}}
   }
@@ -15,7 +15,7 @@ cf_dns_t = Template("""
 """)
 
 service_t = Template("""
-(${service}_common) {
+(${service_var}) {
 bind ${tailscale_ip}
 encode ${encodings}
 ${reverse_proxies}
@@ -29,7 +29,7 @@ reverse_proxy ${path} ${ip}:${port}
 mixer_t = Template("""
 ${service}.${domain} {
   import ${cf_var}
-  import ${common_var}
+  import ${service_var}
 }
 """)
 
@@ -43,7 +43,7 @@ main_yaml = Schema({
     'cf_setup': And(
         dict, lambda d: len(d) > 0,
         {
-            str: {
+            And(str, Use(lambda k: "cf_" + k)): {
                 'env_name': str
                 }
         }
@@ -53,7 +53,7 @@ main_yaml = Schema({
             dict,
             lambda d: len(d) > 0,             
             {
-                str: {
+                And(str, Use(lambda k: k + "_common")): {
                     Optional('encodings'): [str], 
                     'reverse_proxy': And(
                         list,
@@ -69,46 +69,46 @@ main_yaml = Schema({
         )
     })
 
+# TODO: Use() partially works, but I do need the raw service later, so probably adjust this
+# might be worth exporting the json structure to a parsed structure with everything I need set up
+
 ### MAIN FILE ###
 
 with open('ip.yaml', 'r') as f:
-    data = yaml.load(f, Loader=yaml.SafeLoader)
+    raw_data = yaml.load(f, Loader=yaml.SafeLoader)
 
-
+# Validate the yaml file before processing
 try: 
-    main_yaml.validate(data)
+    data = main_yaml.validate(raw_data)
 except SchemaError as e:
     print(f"Validation failed: {e}")
 
 
 
 
-domain_list = data['cf_setup'].keys()
-common_list = data['services'].keys()
+cf_vars = data['cf_setup'].keys()
+services = data['services'].keys()
 TAILSCALE_IP = data['tailscale_ip']
 
 gen_file_str = ""
-for key, val in data['cf_setup'].items():
-    gen_file_str += cf_dns_t.substitute(cf_var=key, api_key_path=val)
 
+for cf, path in data['cf_setup'].items():
+    gen_file_str += cf_dns_t.substitute(cf_var=cf, api_key_path=path['env_name'])
 
-
-
-for key, val in data['services'].items():
+for service, fields in data['services'].items():
     rev = ""
-    for p in val['reverse_proxy']:
-        path=p.get("path", "")
-        rev += rproxy_t.safe_substitute(path=path,ip=p["address"],port=p["port"])
+    for raw_path in fields['reverse_proxy']:
 
-    gen_file_str += service_t.substitute(service=key, tailscale_ip=TAILSCALE_IP, encodings=' '.join(val['encodings']), reverse_proxies=rev)
+        # get path, or empty string if DNE
+        path=raw_path.get("path", "")
 
+        rev += rproxy_t.safe_substitute(path=path,ip=raw_path["address"],port=raw_path["port"])
 
+    gen_file_str += service_t.substitute(service_var=service, tailscale_ip=TAILSCALE_IP, encodings=' '.join(fields['encodings']), reverse_proxies=rev)
 
-
-
-for i in common_list:
-    for b in domain_list:
-        gen_file_str += mixer_t.substitute(service=i,domain=b,cf_var='cf_'+b,common_var=i+'_common')
+for service in services:
+    for cf in cf_vars:
+        gen_file_str += mixer_t.substitute(service=service,domain=cf,cf_var=cf,service_var=service)
 
 
 print(gen_file_str)

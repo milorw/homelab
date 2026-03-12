@@ -5,6 +5,7 @@ services:
     working_dir: /work
     volumes:
       - ./:/work
+      - /srv/appdata/edge:/srv/appdata/edge
     command: >
       sh -c "pip install --no-cache-dir --root-user-action=ignore pyyaml &&
              python /work/generator.py"
@@ -15,7 +16,7 @@ services:
     restart: unless-stopped
     network_mode: "host"
     volumes:
-      - ./data/coredns_data/Corefile:/Corefile:ro
+      - /srv/appdata/edge/coredns_data/Corefile:/Corefile:ro
     command: -conf /Corefile
     depends_on:
       generator:
@@ -30,9 +31,9 @@ services:
     env_file:
       - ./.env
     volumes:
-      - ./data/caddy_data/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./data/caddy_data:/data
-      - ./data/caddy_config:/config
+      - /srv/appdata/edge/caddy_data/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /srv/appdata/edge/caddy_data:/data
+      - /srv/appdata/edge/caddy_config:/config
     depends_on:
       generator:
         condition: service_completed_successfully

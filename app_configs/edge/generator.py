@@ -11,11 +11,9 @@ except ImportError:
 
 ROOT = Path(__file__).parent.resolve()
 CONFIG_PATH = ROOT / "ip_config.yml"
-OUT_CADDY = ROOT / "data" / "caddy_data" / "Caddyfile"
-OUT_CORE = ROOT / "data" / "coredns_data" / "Corefile"
+OUT_CADDY = "/srv/appdata/edge/caddy_data/Caddyfile"
+OUT_CORE = "/srv/appdata/edge/coredns_data/Corefile"
 
-OUT_CADDY.parent.mkdir(parents=True, exist_ok=True)
-OUT_CORE.parent.mkdir(parents=True, exist_ok=True)
 
 def require(d, key, ctx=""):
     if key not in d:
@@ -93,7 +91,8 @@ def main():
             caddy_lines.append("}")
             caddy_lines.append("")
 
-    OUT_CADDY.write_text("\n".join(caddy_lines))
+    with open(OUT_CADDY, 'w') as f:
+        f.write("\n".join(caddy_lines))
 
     # --- Build Corefile ---
     core_lines = []
@@ -124,7 +123,8 @@ def main():
     core_lines.append("}")
     core_lines.append("")
 
-    OUT_CORE.write_text("\n".join(core_lines))
+    with open(OUT_CORE, 'w') as f:
+        f.write("\n".join(core_lines))
 
     print(f"Wrote: {OUT_CADDY}")
     print(f"Wrote: {OUT_CORE}")

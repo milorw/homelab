@@ -1,37 +1,58 @@
 import json
 import yaml
 from string import Template
-from schema import Schema, And, Use, Optional, Or
+from textwrap import dedent, indent
+from schema import Schema, And, Use, Optional, Or, SchemaError
 import re
+
+def strip_and_append(re1, text, append):
+    matches = re.search(r"^(.*?)\.\w+$", text)
+    return (matches.group(1) + append)
 
 ### TEMPLATES ###
 
-cf_dns_t = Template("""
+cf_dns_t = Template(dedent("""\
 (${cf_var}) {
   tls {
     dns cloudflare {env.${api_key_path}}
   }
 }
-""")
+"""))
 
-service_t = Template("""
+service_t = Template(dedent("""\
 (${service_var}) {
-bind ${tailscale_ip}
-encode ${encodings}
+  bind ${tailscale_ip}
+  encode ${encodings}
 ${reverse_proxies}
 }
-""")
+"""))
 
-rproxy_t = Template("""
-reverse_proxy ${path} ${ip}:${port}
-""")
+rproxy_empty_t = Template(dedent("""\
+reverse_proxy ${path}${ip}:${port}
+"""))
 
-mixer_t = Template("""
+rproxy_t = Template(dedent("""\
+reverse_proxy ${path}${ip}:${port} {
+${headers}
+}\
+"""))
+
+transport_http_t = Template(dedent("""\
+transport_http {
+  ${flag}
+}
+"""))
+
+header_t = Template(dedent("""\
+header_up ${header} ${flag}
+"""))
+
+mixer_t = Template(dedent("""\
 ${service}.${domain} {
   import ${cf_var}
   import ${service_var}
 }
-""")
+"""))
 
 ### VALIDATION SCHEMAS ###
 
@@ -40,37 +61,43 @@ IP_REGEX = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$|localhost"
 main_yaml = Schema({
     'tailscale_ip': And(str, lambda s: re.match(IP_REGEX, s)),
 
-    'cf_setup': And(
+    'domains': And(
         dict, lambda d: len(d) > 0,
         {
-            And(str, Use(lambda k: "cf_" + k)): {
-                'env_name': str
-                }
-        }
+            str: [
+                    {
+                        'cf_env_name': str
+                    }
+                ]
+        },
     ),
 
     'services': And(
             dict,
             lambda d: len(d) > 0,             
             {
-                And(str, Use(lambda k: k + "_common")): {
+                str: {
                     Optional('encodings'): [str], 
                     'reverse_proxy': And(
                         list,
                         lambda l: len(l) > 0,  
-                        [{                     
-                            'address': And(str, lambda s: re.match(IP_REGEX, s)),
-                            'port': int,
-                            Optional('path'): str
-                        }]
-                    )
-                }
+                        [{
+                            'address': And(str, lambda s: re.fullmatch(IP_REGEX, s) is not None),
+                            'port': And(int, lambda p: 1 <= p <= 65535),
+                            Optional('path'): str,
+                            Optional('transport_http'): And(
+                                str,
+                                lambda s: s in {'tls_insecure_skip_verify'}
+                            ),
+                            Optional('headers'): {
+                                str: Or(str, int, bool)
+                            }
+                    }]
+                )
             }
-        )
-    })
-
-# TODO: Use() partially works, but I do need the raw service later, so probably adjust this
-# might be worth exporting the json structure to a parsed structure with everything I need set up
+        }
+    )
+})
 
 ### MAIN FILE ###
 
@@ -86,29 +113,93 @@ except SchemaError as e:
 
 
 
-cf_vars = data['cf_setup'].keys()
-services = data['services'].keys()
+'''
+sanitized domain dictionary, containing a sub-dictionary of each domain's attributes:
+
+EX:
+{
+    'domain1.me':
+        {'cf_env_name': 'CF_API_TOKEN_domain1'},
+    'domain2.com':
+        {'cf_env_name': 'CF_API_TOKEN_domain2'}
+}
+'''
+domain_attr = {}
+
+for key, value in data['domains'].items():
+    attributes = {}
+    for atr in value:
+        for key1, value1 in atr.items():
+            attributes[key1] = value1
+
+    domain_attr[key] = attributes
+
+
+'''
+sanitized services dictionary, containing a sub-dictionary of each services's attributes:
+
+EX:
+{
+    'service1':
+        {'attribute1: 'something'},
+    'service2':
+        {'attribute1': 'something'}
+}
+'''
+service_attr = {}
+
+for key, value in data['services'].items():
+    service_attr[key] = value
+
+
 TAILSCALE_IP = data['tailscale_ip']
 
 gen_file_str = ""
 
-for cf, path in data['cf_setup'].items():
-    gen_file_str += cf_dns_t.substitute(cf_var=cf, api_key_path=path['env_name'])
-
-for service, fields in data['services'].items():
-    rev = ""
-    for raw_path in fields['reverse_proxy']:
-
-        # get path, or empty string if DNE
-        path=raw_path.get("path", "")
-
-        rev += rproxy_t.safe_substitute(path=path,ip=raw_path["address"],port=raw_path["port"])
-
-    gen_file_str += service_t.substitute(service_var=service, tailscale_ip=TAILSCALE_IP, encodings=' '.join(fields['encodings']), reverse_proxies=rev)
-
-for service in services:
-    for cf in cf_vars:
-        gen_file_str += mixer_t.substitute(service=service,domain=cf,cf_var=cf,service_var=service)
+cf = []
+for domain, attr in domain_attr.items():
+    cf.append(cf_dns_t.substitute(cf_var=strip_and_append(0, domain, "_cf"), api_key_path=attr['cf_env_name']))
 
 
-print(gen_file_str)
+
+services = []
+for service, fields in service_attr.items():
+    proxies = []
+    for f in fields['reverse_proxy']:
+
+
+        path = f.get("path","")
+        path = f"{path} " if path else ""
+
+
+        headers = f.get("headers", None)
+        t = f.get("transport_http", None)
+        hds = []
+
+        if headers:
+            for k, v in headers.items():
+                hds.append(header_t.substitute(header=k, flag=str(v)))
+                
+            proxies.append(rproxy_t.safe_substitute(path=path, ip=f['address'], port=f['port'], headers=indent(''.join(hds), "  ")))
+        else:
+            proxies.append(rproxy_empty_t.substitute(path=path, ip=f['address'], port=f['port']))
+
+    
+    services.append(service_t.substitute(service_var=service, tailscale_ip=TAILSCALE_IP, encodings='  '.join(fields['encodings']), reverse_proxies=indent(''.join(proxies), "  ")))
+
+mixers = []
+
+for service in service_attr.keys():
+    for key, value in domain_attr.items():
+        mixers.append(mixer_t.substitute(service=service,domain=key,cf_var=strip_and_append(0, domain, "_cf"),service_var=service))
+
+
+for c in cf:
+    print(c)
+
+for s in services:
+    print(s)
+for m in mixers:
+    print(m)
+
+

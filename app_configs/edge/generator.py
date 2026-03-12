@@ -28,7 +28,7 @@ ${reverse_proxies}
 """))
 
 rproxy_empty_t = Template(dedent("""\
-reverse_proxy ${path}${ip}:${port}
+reverse_proxy ${path}${ip}:${port}\
 """))
 
 rproxy_t = Template(dedent("""\
@@ -40,11 +40,11 @@ ${headers}
 transport_http_t = Template(dedent("""\
 transport_http {
   ${flag}
-}
+}\
 """))
 
 header_t = Template(dedent("""\
-header_up ${header} ${flag}
+header_up ${header} ${flag}\
 """))
 
 mixer_t = Template(dedent("""\
@@ -53,6 +53,28 @@ ${service}.${domain} {
   import ${service_var}
 }
 """))
+
+corefile_t = Template(dedent("""\
+.:53 {
+  errors
+  log
+  health
+  ready
+
+  hosts {
+${hosts}
+    fallthrough
+  }
+  forward . 1.1.1.1 8.8.8.8
+  cache 30
+}\
+"""))
+
+
+corefile_host_t = Template(dedent("""\
+${tailscale_ip} ${domain_list}\
+"""))
+
 
 ### VALIDATION SCHEMAS ###
 
@@ -101,105 +123,97 @@ main_yaml = Schema({
 
 ### MAIN FILE ###
 
-with open('ip.yaml', 'r') as f:
-    raw_data = yaml.load(f, Loader=yaml.SafeLoader)
+def main():
+    with open('ip.yaml', 'r') as f:
+        raw_data = yaml.load(f, Loader=yaml.SafeLoader)
 
-# Validate the yaml file before processing
-try: 
-    data = main_yaml.validate(raw_data)
-except SchemaError as e:
-    print(f"Validation failed: {e}")
-
-
-
-
-'''
-sanitized domain dictionary, containing a sub-dictionary of each domain's attributes:
-
-EX:
-{
-    'domain1.me':
-        {'cf_env_name': 'CF_API_TOKEN_domain1'},
-    'domain2.com':
-        {'cf_env_name': 'CF_API_TOKEN_domain2'}
-}
-'''
-domain_attr = {}
-
-for key, value in data['domains'].items():
-    attributes = {}
-    for atr in value:
-        for key1, value1 in atr.items():
-            attributes[key1] = value1
-
-    domain_attr[key] = attributes
+    # Validate the yaml file before processing
+    try: 
+        data = main_yaml.validate(raw_data)
+    except SchemaError as e:
+        print(f"Validation failed: {e}")
 
 
-'''
-sanitized services dictionary, containing a sub-dictionary of each services's attributes:
+    TAILSCALE_IP = data['tailscale_ip']
+    domain_attr = {}
 
-EX:
-{
-    'service1':
-        {'attribute1: 'something'},
-    'service2':
-        {'attribute1': 'something'}
-}
-'''
-service_attr = {}
+    for key, value in data['domains'].items():
+        attributes = {}
+        for atr in value:
+            for key1, value1 in atr.items():
+                attributes[key1] = value1
 
-for key, value in data['services'].items():
-    service_attr[key] = value
+        domain_attr[key] = attributes
 
+    service_attr = {}
 
-TAILSCALE_IP = data['tailscale_ip']
+    for key, value in data['services'].items():
+        service_attr[key] = value
 
-gen_file_str = ""
+    print("Corefile:\n")
+    gen_corefile(service_attr, domain_attr, TAILSCALE_IP)
+    print("\nCaddyfile:\n")
+    gen_caddyfile(service_attr, domain_attr, TAILSCALE_IP)
 
-cf = []
-for domain, attr in domain_attr.items():
-    cf.append(cf_dns_t.substitute(cf_var=strip_and_append(0, domain, "_cf"), api_key_path=attr['cf_env_name']))
-
-
-
-services = []
-for service, fields in service_attr.items():
-    proxies = []
-    for f in fields['reverse_proxy']:
-
-
-        path = f.get("path","")
-        path = f"{path} " if path else ""
-
-
-        headers = f.get("headers", None)
-        t = f.get("transport_http", None)
-        hds = []
-
-        if headers:
-            for k, v in headers.items():
-                hds.append(header_t.substitute(header=k, flag=str(v)))
-                
-            proxies.append(rproxy_t.safe_substitute(path=path, ip=f['address'], port=f['port'], headers=indent(''.join(hds), "  ")))
-        else:
-            proxies.append(rproxy_empty_t.substitute(path=path, ip=f['address'], port=f['port']))
-
-    
-    services.append(service_t.substitute(service_var=service, tailscale_ip=TAILSCALE_IP, encodings='  '.join(fields['encodings']), reverse_proxies=indent(''.join(proxies), "  ")))
-
-mixers = []
-
-for service in service_attr.keys():
+def gen_corefile(service_attr, domain_attr, TAILSCALE_IP):
+    hosts = []
     for key, value in domain_attr.items():
-        mixers.append(mixer_t.substitute(service=service,domain=key,cf_var=strip_and_append(0, domain, "_cf"),service_var=service))
+        services = []
+        for service in service_attr.keys():
+            services.append(f"{service}.{key}")
+        hosts.append(corefile_host_t.substitute(tailscale_ip=TAILSCALE_IP, domain_list=' '.join(services)))
+
+    print(corefile_t.substitute(hosts=indent('\n'.join(hosts), "    ")))
+
+def gen_caddyfile(service_attr, domain_attr, TAILSCALE_IP):
+    cf = []
+    services = []
+    mixers = []
+
+    for domain, attr in domain_attr.items():
+        cf.append(cf_dns_t.substitute(cf_var=strip_and_append(0, domain, "_cf"), api_key_path=attr['cf_env_name']))
 
 
-for c in cf:
-    print(c)
 
-for s in services:
-    print(s)
-for m in mixers:
-    print(m)
+    for service, fields in service_attr.items():
+        proxies = []
+        for f in fields['reverse_proxy']:
 
 
+            path = f.get("path","")
+            path = f"{path} " if path else ""
+
+
+            headers = f.get("headers", None)
+            t = f.get("transport_http", None)
+            hds = []
+
+            if headers:
+                for k, v in headers.items():
+                    if v == 'host':
+                        hds.append(header_t.substitute(header=k, flag=str("{"+v+"}")))
+                    else:
+                        hds.append(header_t.substitute(header=k, flag=str(v)))
+                    
+                proxies.append(rproxy_t.safe_substitute(path=path, ip=f['address'], port=f['port'], headers=indent('\n'.join(hds), "  ")))
+            else:
+                proxies.append(rproxy_empty_t.substitute(path=path, ip=f['address'], port=f['port']))
+
+        
+        services.append(service_t.substitute(service_var=service, tailscale_ip=TAILSCALE_IP, encodings=' '.join(fields['encodings']), reverse_proxies=indent('\n'.join(proxies), "  ")))
+
+
+    for service in service_attr.keys():
+        for key, value in domain_attr.items():
+            mixers.append(mixer_t.substitute(service=service,domain=key,cf_var=strip_and_append(0, key, "_cf"),service_var=service))
+
+
+    for c in cf:
+        print(c)
+
+    for s in services:
+        print(s)
+    for m in mixers:
+        print(m)
+
+main()

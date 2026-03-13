@@ -1,62 +1,33 @@
+## Mountpoints
+
 The edge router LXC is mounted as follows:
 
 ```text
 mp10: /tank/appdata/git_repo/app_configs/edge, mp=/opt/edge  
-mp11: /tank/appdata/edge, mp=/opt/edge/data
+mp11: /tank/appdata, mp=/srv/appdata
 ```
 
-An empty `/edge` folder lives in the Git repo as a mount point, and the working LXC scratch folder gets mounted there.
+`/opt/…` is the primary mountpoint for all config and Docker files.
+`/srv/…` is the primary mountpoint for all LXC appdata.
 
-`generator.py` generates the Caddyfile and Corefile from a list of url → ip maps, for easy maintenance. 
+## Generator
 
-`compose.yaml` is the main compose file, and it regenerates the Caddyfile/Corefile whenever docker is (re)started.
+`generator.py` generates the Caddyfile and Corefile from a yaml config file, for easy maintenance of all domains and services passed through the edge router.
 
-Example ip_config.yaml layout:
+## Docker Compose Setup
 
-```yaml
-# config.yml  
-tailscale_ip: 100.0.0.0
-  
-# Define TLS profiles once (which env var to use)  
-tls_profiles:  
- cloudflare_api_1:  
-   env_var: CF_API_TOKEN_CF1
- cloudflare_api_2:  
-   env_var: CF_API_TOKEN_CF2
-  
-# Canonical services list (shared across domains)  
-services:  
- homebox:  
-   upstream: "0.0.0.0:3100"  
-   encode: ["gzip", "zstd"]  
- sure:  
-   upstream: "0.0.0.0:3000"  
-   encode: ["gzip", "zstd"]  
- proxmox:  
-   upstream: "https://0.0.0.0:8006"  
-   proxmox: true   # turn on special reverse_proxy transport+headers  
-  
- jellyfin:  
-   upstream: "http://0.0.0.0:8096"  
-   encode: ["gzip", "zstd"]  
-  
- ha:  
-   upstream: "0.0.0.0:8123"  
-   encode: ["gzip", "zstd"]  
-  
-# Domains decide which services they expose  
-domains:  
- - name: "domain1.com"  
-   tls_profile: "cloudflare_api_1"  
-   services: ["homebox", "sure", "proxmox", "jellyfin", "ha"]  
-  
- - name: "domain2.com"  
-   tls_profile: "cloudflare_api_2"  
-   services: ["homebox", "sure", "jellyfin", "ha"]
-```
+The python generator service is built to an image so the Python dependencies and script + yaml are baked in, and then the compose file only has to create the container and run `python /app/generator.py` on (re)start.
 
+The Caddy service needs to be built to include Cloudflare DNS options, allowing the use of the Cloudflare API for my domains.
 
-build note:
-docker build -t edge-generator:2026-03-13 ./generator
+The main compose file pulls the Caddy/Generator images from its tagged names in my `.env`.
 
+Build commands:
 
+1. `docker build -t service_name:date ./build_dir`
+
+2. Update the `.env` image variables to their latest tags and reboot the containers
+
+Note: each build directory contains a Dockerfile for the build process, and the generator directory contains the python script and ip config file.
+
+This ensures that Python changes or script changes will not affect the edge router, unless the generator service is manually rebuilt.

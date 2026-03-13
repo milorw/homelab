@@ -83,14 +83,19 @@ IP_REGEX = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$|localhost"
 main_yaml = Schema({
     'tailscale_ip': And(str, lambda s: re.match(IP_REGEX, s)),
 
+
     'domains': And(
-        dict, lambda d: len(d) > 0,
+        dict,
+        lambda d: len(d) > 0,
         {
-            str: [
-                    {
-                        'cf_env_name': str
-                    }
-                ]
+            str: {
+                'cf_env_name': str,
+                'services': And(
+                    list,
+                    lambda l: len(l) > 0,
+                    [str]
+                )
+            }
         },
     ),
 
@@ -124,29 +129,26 @@ main_yaml = Schema({
 ### MAIN FILE ###
 
 def main():
+    # load the yaml data
     with open('ip.yaml', 'r') as f:
         raw_data = yaml.load(f, Loader=yaml.SafeLoader)
 
-    # Validate the yaml file before processing
+    # validate the yaml before processing
     try: 
         data = main_yaml.validate(raw_data)
     except SchemaError as e:
         print(f"Validation failed: {e}")
 
-
     TAILSCALE_IP = data['tailscale_ip']
-    domain_attr = {}
 
+    domain_attr = {}
     for key, value in data['domains'].items():
         attributes = {}
-        for atr in value:
-            for key1, value1 in atr.items():
-                attributes[key1] = value1
-
+        for key1, value1 in value.items():
+            attributes[key1] = value1
         domain_attr[key] = attributes
 
     service_attr = {}
-
     for key, value in data['services'].items():
         service_attr[key] = value
 
@@ -155,64 +157,82 @@ def main():
     print("\nCaddyfile:\n")
     gen_caddyfile(service_attr, domain_attr, TAILSCALE_IP)
 
+
+
 def gen_corefile(service_attr, domain_attr, TAILSCALE_IP):
     hosts = []
-    for key, value in domain_attr.items():
+    for domain, attr in domain_attr.items():
         services = []
         for service in service_attr.keys():
-            services.append(f"{service}.{key}")
+            if service in attr['services']:
+                # append valid services for the domain
+                services.append(f"{service}.{domain}")
+
+        # create the tailscale ip -> services block for each domain
         hosts.append(corefile_host_t.substitute(tailscale_ip=TAILSCALE_IP, domain_list=' '.join(services)))
 
+    # append each domain's block to main corefile
     print(corefile_t.substitute(hosts=indent('\n'.join(hosts), "    ")))
+
+
 
 def gen_caddyfile(service_attr, domain_attr, TAILSCALE_IP):
     cf = []
     services = []
     mixers = []
-
+    
+    # setup each domain's cloudflare api env block
     for domain, attr in domain_attr.items():
         cf.append(cf_dns_t.substitute(cf_var=strip_and_append(0, domain, "_cf"), api_key_path=attr['cf_env_name']))
 
-
-
-    for service, fields in service_attr.items():
+    # build each service block
+    for service, attr in service_attr.items():
         proxies = []
-        for f in fields['reverse_proxy']:
+
+        # create a list of reverse proxies for the service
+        for rproxy in attr['reverse_proxy']:
 
 
-            path = f.get("path","")
+            path = rproxy.get("path","")
             path = f"{path} " if path else ""
 
 
-            headers = f.get("headers", None)
-            t = f.get("transport_http", None)
-            hds = []
+            headers = rproxy.get("headers", None)
+            t = rproxy.get("transport_http", None)
+            hdr_list = []
 
             if headers:
-                for k, v in headers.items():
-                    if v == 'host':
-                        hds.append(header_t.substitute(header=k, flag=str("{"+v+"}")))
-                    else:
-                        hds.append(header_t.substitute(header=k, flag=str(v)))
+                # add list of headers to reverse proxy
+                for hdr, val in headers.items():
+                    if val == 'host':
+                        val = "{host}"
+
+                    hdr_list.append(header_t.substitute(header=hdr, flag=str(val)))
                     
-                proxies.append(rproxy_t.safe_substitute(path=path, ip=f['address'], port=f['port'], headers=indent('\n'.join(hds), "  ")))
+                proxies.append(rproxy_t.safe_substitute(path=path, ip=rproxy['address'], port=rproxy['port'], headers=indent('\n'.join(hdr_list), "  ")))
             else:
-                proxies.append(rproxy_empty_t.substitute(path=path, ip=f['address'], port=f['port']))
+                # use basic reverse proxy setup
+                proxies.append(rproxy_empty_t.substitute(path=path, ip=rproxy['address'], port=rproxy['port']))
 
-        
-        services.append(service_t.substitute(service_var=service, tailscale_ip=TAILSCALE_IP, encodings=' '.join(fields['encodings']), reverse_proxies=indent('\n'.join(proxies), "  ")))
+        # build list of service blocks 
+        services.append(service_t.substitute(service_var=service, tailscale_ip=TAILSCALE_IP, encodings=' '.join(attr['encodings']), reverse_proxies=indent('\n'.join(proxies), "  ")))
 
-
+    # build user -> service mapping for each domain and allowed service
     for service in service_attr.keys():
-        for key, value in domain_attr.items():
-            mixers.append(mixer_t.substitute(service=service,domain=key,cf_var=strip_and_append(0, key, "_cf"),service_var=service))
+        for domain, attr in domain_attr.items():
+            if service in attr['services']:
+                mixers.append(mixer_t.substitute(service=service,domain=domain,cf_var=strip_and_append(0, domain, "_cf"),service_var=service))
 
-
+    # TEMP OUTPUT
+    # cf is the cloudflare api env block
     for c in cf:
         print(c)
 
+    # services is the block of all services
     for s in services:
         print(s)
+
+    # mixers is the block of all domain -> (cf + service) mappings
     for m in mixers:
         print(m)
 

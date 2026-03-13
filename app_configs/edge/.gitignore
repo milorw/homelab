@@ -1,4 +1,5 @@
 data/
 .env
-ip_config.*
+*.yml
+*.yaml
 *pem

@@ -130,7 +130,7 @@ main_yaml = Schema({
 
 def main():
     # load the yaml data
-    with open('ip.yaml', 'r') as f:
+    with open('/app/ip.yaml', 'r') as f:
         raw_data = yaml.load(f, Loader=yaml.SafeLoader)
 
     # validate the yaml before processing
@@ -172,7 +172,8 @@ def gen_corefile(service_attr, domain_attr, TAILSCALE_IP):
         hosts.append(corefile_host_t.substitute(tailscale_ip=TAILSCALE_IP, domain_list=' '.join(services)))
 
     # append each domain's block to main corefile
-    print(corefile_t.substitute(hosts=indent('\n'.join(hosts), "    ")))
+    with open('/srv/appdata/edge/coredns_data/Corefile', 'w') as f:
+        f.writelines(corefile_t.substitute(hosts=indent('\n'.join(hosts), "    ")))
 
 
 
@@ -223,17 +224,15 @@ def gen_caddyfile(service_attr, domain_attr, TAILSCALE_IP):
             if service in attr['services']:
                 mixers.append(mixer_t.substitute(service=service,domain=domain,cf_var=strip_and_append(0, domain, "_cf"),service_var=service))
 
-    # TEMP OUTPUT
-    # cf is the cloudflare api env block
-    for c in cf:
-        print(c)
 
-    # services is the block of all services
-    for s in services:
-        print(s)
+    with open('/srv/appdata/edge/caddy_data/Caddyfile', 'w') as f:
+        for c in cf:
+            f.writelines(c)
 
-    # mixers is the block of all domain -> (cf + service) mappings
-    for m in mixers:
-        print(m)
+        for s in services:
+            f.writelines(s)
+
+        for m in mixers:
+            f.writelines(m)
 
 main()

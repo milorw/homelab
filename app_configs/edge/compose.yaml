@@ -1,14 +1,11 @@
 services:
   generator:
-    image: python:3.12-alpine
+    build: generator/
+    image: edge-generator:2026-03-13
     container_name: edge-generator
-    working_dir: /work
+    command: [ "python", "/app/generator.py"]
     volumes:
-      - ./:/work
       - /srv/appdata/edge:/srv/appdata/edge
-    command: >
-      sh -c "pip install --no-cache-dir --root-user-action=ignore pyyaml &&
-             python /work/generator.py"
 
   coredns:
     image: coredns/coredns:1.11.1
@@ -18,9 +15,6 @@ services:
     volumes:
       - /srv/appdata/edge/coredns_data/Corefile:/Corefile:ro
     command: -conf /Corefile
-    depends_on:
-      generator:
-        condition: service_completed_successfully
 
   caddy:
     build:
@@ -34,6 +28,3 @@ services:
       - /srv/appdata/edge/caddy_data/Caddyfile:/etc/caddy/Caddyfile:ro
       - /srv/appdata/edge/caddy_data:/data
       - /srv/appdata/edge/caddy_config:/config
-    depends_on:
-      generator:
-        condition: service_completed_successfully

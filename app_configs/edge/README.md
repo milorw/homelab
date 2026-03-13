@@ -55,3 +55,8 @@ domains:
    services: ["homebox", "sure", "jellyfin", "ha"]
 ```
 
+
+build note:
+docker build -t edge-generator:2026-03-13 ./generator
+
+

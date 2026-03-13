@@ -1,0 +1,6 @@
+.env
+*.ts.net*
+*.yml
+*.conf
+
+

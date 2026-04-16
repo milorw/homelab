@@ -1,0 +1,238 @@
+import json
+import yaml
+from string import Template
+from textwrap import dedent, indent
+from schema import Schema, And, Use, Optional, Or, SchemaError
+import re
+
+def strip_and_append(re1, text, append):
+    matches = re.search(r"^(.*?)\.\w+$", text)
+    return (matches.group(1) + append)
+
+### TEMPLATES ###
+
+cf_dns_t = Template(dedent("""\
+(${cf_var}) {
+  tls {
+    dns cloudflare {env.${api_key_path}}
+  }
+}
+"""))
+
+service_t = Template(dedent("""\
+(${service_var}) {
+  bind ${tailscale_ip}
+  encode ${encodings}
+${reverse_proxies}
+}
+"""))
+
+rproxy_empty_t = Template(dedent("""\
+reverse_proxy ${path}${ip}:${port}\
+"""))
+
+rproxy_t = Template(dedent("""\
+reverse_proxy ${path}${ip}:${port} {
+${headers}
+}\
+"""))
+
+transport_http_t = Template(dedent("""\
+transport_http {
+  ${flag}
+}\
+"""))
+
+header_t = Template(dedent("""\
+header_up ${header} ${flag}\
+"""))
+
+mixer_t = Template(dedent("""\
+${service}.${domain} {
+  import ${cf_var}
+  import ${service_var}
+}
+"""))
+
+corefile_t = Template(dedent("""\
+.:53 {
+  errors
+  log
+  health
+  ready
+
+  hosts {
+${hosts}
+    fallthrough
+  }
+  forward . 1.1.1.1 8.8.8.8
+  cache 30
+}\
+"""))
+
+
+corefile_host_t = Template(dedent("""\
+${tailscale_ip} ${domain_list}\
+"""))
+
+
+### VALIDATION SCHEMAS ###
+
+IP_REGEX = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$|localhost"
+
+main_yaml = Schema({
+    'tailscale_ip': And(str, lambda s: re.match(IP_REGEX, s)),
+
+
+    'domains': And(
+        dict,
+        lambda d: len(d) > 0,
+        {
+            str: {
+                'cf_env_name': str,
+                'services': And(
+                    list,
+                    lambda l: len(l) > 0,
+                    [str]
+                )
+            }
+        },
+    ),
+
+    'services': And(
+            dict,
+            lambda d: len(d) > 0,             
+            {
+                str: {
+                    Optional('encodings'): [str], 
+                    'reverse_proxy': And(
+                        list,
+                        lambda l: len(l) > 0,  
+                        [{
+                            'address': And(str, lambda s: re.fullmatch(IP_REGEX, s) is not None),
+                            'port': And(int, lambda p: 1 <= p <= 65535),
+                            Optional('path'): str,
+                            Optional('transport_http'): And(
+                                str,
+                                lambda s: s in {'tls_insecure_skip_verify'}
+                            ),
+                            Optional('headers'): {
+                                str: Or(str, int, bool)
+                            }
+                    }]
+                )
+            }
+        }
+    )
+})
+
+### MAIN FILE ###
+
+def main():
+    # load the yaml data
+    with open('/app/ip.yaml', 'r') as f:
+        raw_data = yaml.load(f, Loader=yaml.SafeLoader)
+
+    # validate the yaml before processing
+    try: 
+        data = main_yaml.validate(raw_data)
+    except SchemaError as e:
+        print(f"Validation failed: {e}")
+
+    TAILSCALE_IP = data['tailscale_ip']
+
+    domain_attr = {}
+    for key, value in data['domains'].items():
+        attributes = {}
+        for key1, value1 in value.items():
+            attributes[key1] = value1
+        domain_attr[key] = attributes
+
+    service_attr = {}
+    for key, value in data['services'].items():
+        service_attr[key] = value
+
+    print("Corefile:\n")
+    gen_corefile(service_attr, domain_attr, TAILSCALE_IP)
+    print("\nCaddyfile:\n")
+    gen_caddyfile(service_attr, domain_attr, TAILSCALE_IP)
+
+
+
+def gen_corefile(service_attr, domain_attr, TAILSCALE_IP):
+    hosts = []
+    for domain, attr in domain_attr.items():
+        services = []
+        for service in service_attr.keys():
+            if service in attr['services']:
+                # append valid services for the domain
+                services.append(f"{service}.{domain}")
+
+        # create the tailscale ip -> services block for each domain
+        hosts.append(corefile_host_t.substitute(tailscale_ip=TAILSCALE_IP, domain_list=' '.join(services)))
+
+    # append each domain's block to main corefile
+    with open('/srv/appdata/edge/coredns_data/Corefile', 'w') as f:
+        f.writelines(corefile_t.substitute(hosts=indent('\n'.join(hosts), "    ")))
+
+
+
+def gen_caddyfile(service_attr, domain_attr, TAILSCALE_IP):
+    cf = []
+    services = []
+    mixers = []
+    
+    # setup each domain's cloudflare api env block
+    for domain, attr in domain_attr.items():
+        cf.append(cf_dns_t.substitute(cf_var=strip_and_append(0, domain, "_cf"), api_key_path=attr['cf_env_name']))
+
+    # build each service block
+    for service, attr in service_attr.items():
+        proxies = []
+
+        # create a list of reverse proxies for the service
+        for rproxy in attr['reverse_proxy']:
+
+
+            path = rproxy.get("path","")
+            path = f"{path} " if path else ""
+
+
+            headers = rproxy.get("headers", None)
+            t = rproxy.get("transport_http", None)
+            hdr_list = []
+
+            if headers:
+                # add list of headers to reverse proxy
+                for hdr, val in headers.items():
+                    if val == 'host':
+                        val = "{host}"
+
+                    hdr_list.append(header_t.substitute(header=hdr, flag=str(val)))
+                    
+                proxies.append(rproxy_t.safe_substitute(path=path, ip=rproxy['address'], port=rproxy['port'], headers=indent('\n'.join(hdr_list), "  ")))
+            else:
+                # use basic reverse proxy setup
+                proxies.append(rproxy_empty_t.substitute(path=path, ip=rproxy['address'], port=rproxy['port']))
+
+        # build list of service blocks 
+        services.append(service_t.substitute(service_var=service, tailscale_ip=TAILSCALE_IP, encodings=' '.join(attr['encodings']), reverse_proxies=indent('\n'.join(proxies), "  ")))
+
+    # build user -> service mapping for each domain and allowed service
+    for service in service_attr.keys():
+        for domain, attr in domain_attr.items():
+            if service in attr['services']:
+                mixers.append(mixer_t.substitute(service=service,domain=domain,cf_var=strip_and_append(0, domain, "_cf"),service_var=service))
+
+
+    with open('/srv/appdata/edge/caddy_data/Caddyfile', 'w') as f:
+        for c in cf:
+            f.writelines(c)
+
+        for s in services:
+            f.writelines(s)
+
+        for m in mixers:
+            f.writelines(m)
+
+main()

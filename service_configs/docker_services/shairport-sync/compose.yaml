@@ -1,0 +1,22 @@
+services:
+  shairport:
+    image: mikebrady/shairport-sync:4.3.7
+    container_name: shairport
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /opt/apps/shairport-sync/shairport-sync.conf:/etc/shairport-sync.conf:ro
+      - /srv/appdata/shairport_data/fifo:/fifo
+      - /var/run/dbus:/var/run/dbus
+
+  snapserver:
+      image: sweisgerber/snapcast
+      container_name: snapserver
+      network_mode: host
+      restart: unless-stopped
+      volumes:
+        - /opt/apps/snapserver/snapserver.conf:/config/snapserver.conf
+        - /srv/appdata/shairport_data/fifo:/fifo:ro
+        - /srv/appdata/snapserver_data:/data
+      depends_on:
+        - shairport

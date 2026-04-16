@@ -23,7 +23,7 @@ services:
   web:
     image: ghcr.io/we-promise/sure:stable
     volumes:
-      - /srv/appdata/sure_data/app-storage:/rails/storage
+      - ${APPDATA_ROOT}/sure_data/app-storage:/rails/storage
     ports:
       - "0.0.0.0:${PORT:-3000}:3000"
     restart: unless-stopped
@@ -41,7 +41,7 @@ services:
     image: ghcr.io/we-promise/sure:stable
     command: bundle exec sidekiq
     volumes:
-      - /srv/appdata/sure_data/app-storage:/rails/storage
+      - ${APPDATA_ROOT}/sure_data/app-storage:/rails/storage
     restart: unless-stopped
     depends_on:
       db:
@@ -57,7 +57,7 @@ services:
     image: postgres:16
     restart: unless-stopped
     volumes:
-      - /srv/appdata/sure_data/postgres-data:/var/lib/postgresql/data
+      - ${APPDATA_ROOT}/sure_data/postgres-data:/var/lib/postgresql/data
     environment:
       <<: *db_env
     healthcheck:
@@ -74,7 +74,7 @@ services:
     image: prodrigestivill/postgres-backup-local
     restart: unless-stopped
     volumes:
-      - /srv/appdata/sure_data/backups:/backups # Change this path to your desired backup location on the host machine
+      - ${APPDATA_ROOT}/sure_data/backups:/backups # Change this path to your desired backup location on the host machine
     environment:
       - POSTGRES_HOST=db
       - POSTGRES_DB=${POSTGRES_DB:-sure_production}
@@ -93,7 +93,7 @@ services:
     image: redis:latest
     restart: unless-stopped
     volumes:
-      - /srv/appdata/sure_data/redis-data:/data
+      - ${APPDATA_ROOT}/sure_data/redis-data:/data
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s

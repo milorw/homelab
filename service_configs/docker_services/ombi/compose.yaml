@@ -7,7 +7,7 @@ services:
       - PGID=1000
       - TZ=America/Los_Angeles
     volumes:
-      - /srv/appdata/ombi_data:/config
+      - ${APPDATA_ROOT}/ombi_data:/config
     ports:
       - "3579:3579"
     restart: unless-stopped

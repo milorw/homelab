@@ -12,4 +12,4 @@ services:
     ports:
       - "3100:7745"
     volumes:
-      - /srv/appdata/homebox_data:/data
+      - ${APPDATA_ROOT}/homebox_data:/data

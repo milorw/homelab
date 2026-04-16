@@ -1,5 +1,4 @@
 data/
 .env
-*.yml
-*.yaml
 *pem
+*.yml

@@ -1,6 +1,4 @@
 .env
-*.ts.net*
-*.yml
+ip.yaml
 *.conf
-
 

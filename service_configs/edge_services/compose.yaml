@@ -5,7 +5,7 @@ services:
     container_name: edge-generator
     command: [ "python", "/app/generator.py"]
     volumes:
-      - /srv/appdata/edge:/srv/appdata/edge
+      - /srv/appdata/edge_data:/srv/appdata/edge
 
   coredns:
     image: coredns/coredns:1.11.1
@@ -13,7 +13,7 @@ services:
     restart: unless-stopped
     network_mode: "host"
     volumes:
-      - /srv/appdata/edge/coredns_data/Corefile:/Corefile:ro
+      - /srv/appdata/edge_data/coredns_data/Corefile:/Corefile:ro
     command: -conf /Corefile
 
   caddy:
@@ -25,6 +25,6 @@ services:
     env_file:
       - ./.env
     volumes:
-      - /srv/appdata/edge/caddy_data/Caddyfile:/etc/caddy/Caddyfile:ro
-      - /srv/appdata/edge/caddy_data:/data
-      - /srv/appdata/edge/caddy_config:/config
+      - /srv/appdata/edge_data/caddy_data/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /srv/appdata/edge_data/caddy_data:/data
+      - /srv/appdata/edge_data/caddy_config:/config

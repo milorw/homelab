@@ -1,0 +1,19 @@
+# secrets
+vault_pass_1password.sh
+*vault_pass*
+*.vault_pass
+
+# editor/tooling
+.vscode
+.obsidian
+
+# ansible runtime artifacts
+*.retry
+.ansible/
+ansible.log
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/

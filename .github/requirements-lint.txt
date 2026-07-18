@@ -1,0 +1,3 @@
+# requirements-lint.txt
+ansible-lint
+yamllint

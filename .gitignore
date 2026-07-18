@@ -2,6 +2,8 @@
 vault_pass_1password.sh
 *vault_pass*
 *.vault_pass
+# explicitly allow example file
+!vault_pass_1password.sh.example
 
 # editor/tooling
 .vscode

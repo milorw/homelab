@@ -1,0 +1,21 @@
+- name: Test
+  hosts: localhost
+
+  tasks:
+    - name: Create test service
+      community.proxmox.proxmox:
+        api_host: "{{ proxmox_host }}"
+        api_user: "{{ pve_api_user }}"
+        api_token_id: "{{ pve_api_token_id }}"
+        api_token_secret: "{{ pve_api_token_secret }}"
+        node: proxmox
+        hostname: myservice-01
+        ostemplate: "local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst"
+        storage: local-lvm
+        disk: "local-lvm:8"
+        memory: 1024
+        cores: 2
+        tags:
+          - myservice
+        state: present
+        validate_certs: false

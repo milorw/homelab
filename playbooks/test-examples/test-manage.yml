@@ -1,0 +1,10 @@
+- name: Test
+  hosts: localhost
+  gather_facts: false
+  vars:
+    target_tag: myservice
+  tasks:
+    - name: Fail if no LXC has this tag
+      ansible.builtin.fail:
+        msg: "No inventory hosts found with tag '{{ target_tag }}' (expected group tag_{{ target_tag }})"
+      when: groups["tag_" ~ target_tag] is not defined or (groups["tag_" ~ target_tag] | length) == 0

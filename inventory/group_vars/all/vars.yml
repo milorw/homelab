@@ -1,0 +1,4 @@
+proxmox_host: 192.168.68.90
+pve_api_user: ansible@pam
+pve_api_token_id: ansible
+pve_api_token_secret: "{{ vault_pve_token_secret }}"

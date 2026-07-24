@@ -21,6 +21,5 @@ filters:
 
 want_facts: true # needed for IP/tag facts
 
-want_proxmox_nodes_ansible_host: false
 compose:
-  ansible_host: proxmox_net0.ip | default(inventory_hostname)
+  ansible_host: proxmox_net0.ip | ipaddr('address')

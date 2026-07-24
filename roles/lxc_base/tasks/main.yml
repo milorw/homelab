@@ -1,0 +1,51 @@
+- name: Create and start LXC container
+  no_log: true # prevent leaking secrets in logs
+
+  module_defaults:
+    community.proxmox.proxmox:
+      api_host: "{{ proxmox_host }}"
+      api_user: "{{ pve_api_user }}"
+      api_token_id: "{{ pve_api_token_id }}"
+      api_token_secret: "{{ pve_api_token_secret }}"
+      validate_certs: false
+
+  block:
+    - name: Create LXC container
+      community.proxmox.proxmox:
+        node: "{{ lxc_base_node }}"
+        hostname: "{{ lxc_base_hostname }}"          # LXC hostname
+        ostemplate: "{{ lxc_base_template }}"        # lxc template to use
+        disk_volume:
+          storage: "{{ lxc_base_storage }}"          # rootfs storage volume
+          size: "{{ lxc_base_disk_gb }}"             # rootfs size
+        cores: "{{ lxc_base_cores }}"                # number of cores
+        memory: "{{ lxc_base_memory }}"              # LXC memory size (MB)
+        unprivileged: "{{ lxc_base_unprivileged }}"
+        onboot: "{{ lxc_base_onboot }}"
+        features: "{{ lxc_base_features }}"          # extra LXC features [keyctl=1, nesting=1, ...]
+        tags: "{{ lxc_base_tags }}"                  # list of tags to apply ['1', '2', ...]
+        pubkey: "{{ lxc_base_pubkey }}"              # ssh public key for Ansible to connect with
+        netif:
+          net0: "name=eth0,bridge={{ lxc_base_bridge }},ip={{ lxc_base_ip_cidr }},gw={{ lxc_base_gateway }}"
+        nameserver: "{{ lxc_base_nameserver }}"
+        searchdomain: "{{ lxc_base_searchdomain }}"
+        state: present
+
+      register: lxc_base_create
+
+    - name: Start LXC container
+      community.proxmox.proxmox:
+        node: "{{ lxc_base_node }}"
+        vmid: "{{ lxc_base_create.vmid }}"
+        state: started
+
+- name: Refresh dynamic inventory
+  # Ensure Ansible can see the newly created LXC
+  ansible.builtin.meta: refresh_inventory
+
+- name: Wait for LXC network to come up
+  ansible.builtin.wait_for:
+    host: "{{ hostvars[lxc_base_hostname].ansible_host }}"
+    port: 22
+    delay: 5
+    timeout: 120

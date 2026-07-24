@@ -1,3 +1,4 @@
+# Proxmox node-specific variables
 proxmox_host: 192.168.68.90
 pve_api_user: ansible@pam
 pve_api_token_id: ansible

@@ -1,0 +1,39 @@
+- name: Provision LXC
+  hosts: localhost
+  gather_facts: false
+  vars:
+    lxc_base_tags: test
+    lxc_base_hostname: "test.local"
+    lxc_base_ip_cidr: "192.168.68.99/22"
+  roles:
+    - lxc_base
+
+- name: Configure new LXC
+  hosts: "test.local"
+  gather_facts: false
+  pre_tasks:
+    - name: Wait for SSH to come up
+      ansible.builtin.wait_for_connection:
+        timeout: 60
+    - name: Gather facts
+      ansible.builtin.setup:
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 0
+      register: apt_update
+      retries: 3
+      delay: 5
+      until: apt_update is succeeded
+
+    - name: Install nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+
+    - name: Start and enable nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true

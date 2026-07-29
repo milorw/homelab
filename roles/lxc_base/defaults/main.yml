@@ -1,0 +1,19 @@
+lxc_base_node: proxmox
+lxc_base_storage: local-lvm
+lxc_base_template: local:vztmpl/debian-12-standard_12.12-1_amd64.tar.zst
+lxc_base_cores: 2
+lxc_base_memory: 1024
+lxc_base_disk_gb: 8
+lxc_base_unprivileged: true
+lxc_base_onboot: true
+lxc_base_features: "nesting=1"
+lxc_base_bridge: vmbr0
+lxc_base_gateway: 192.168.68.1
+lxc_base_nameserver: 192.168.68.1
+lxc_base_searchdomain: local
+lxc_base_pubkey: "{{ lookup('file', '~/.ssh/ansible_proxmox.pub') }}"
+
+# these get overridden per-call
+lxc_base_hostname: ~
+lxc_base_tags: ~
+lxc_base_ip_cidr: ~

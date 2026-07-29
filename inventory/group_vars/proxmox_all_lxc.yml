@@ -1,0 +1,5 @@
+# LXC-specific variables
+ansible_user: root
+ansible_ssh_private_key_file: ~/.ssh/ansible_proxmox
+# SSH key is reused, so allow for changed key hosts, and don't save the known host
+ansible_ssh_common_args: '-o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'

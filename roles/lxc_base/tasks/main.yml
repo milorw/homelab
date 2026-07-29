@@ -1,3 +1,27 @@
+- name: List existing LXCs
+  community.proxmox.proxmox_vm_info:
+    api_host: "{{ proxmox_host }}"
+    api_user: "{{ pve_api_user }}"
+    api_token_id: "{{ pve_api_token_id }}"
+    api_token_secret: "{{ pve_api_token_secret }}"
+    validate_certs: false
+    node: proxmox
+    type: lxc
+  register: lxc_base_info
+
+- name: Check for a match by hostname
+  ansible.builtin.set_fact:
+    lxc_base_matching_lxc: "{{
+        lxc_base_info.proxmox_vms
+        | selectattr('name', 'equalto', lxc_base_hostname)
+        | list
+      }}"
+
+- name: Warn that no matching LXC was found, will create one
+  ansible.builtin.debug:
+    msg: "WARNING: no LXC found matching hostname '{{ target_hostname }}' or tag '{{ target_tag }}' on {{ proxmox_node }} — creating a new one."
+  when: lxc_base_matching_lxc | length == 0
+
 - name: Create and start LXC container
   no_log: true # prevent leaking secrets in logs
 
@@ -9,6 +33,7 @@
       api_token_secret: "{{ pve_api_token_secret }}"
       validate_certs: false
 
+  when: lxc_base_matching_lxc | length == 0
   block:
     - name: Create LXC container
       community.proxmox.proxmox:

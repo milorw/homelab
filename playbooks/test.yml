@@ -27,13 +27,13 @@
       delay: 5
       until: apt_update is succeeded
 
-    - name: Install chrony
+    - name: Install nginx
       ansible.builtin.apt:
-        name: chrony
+        name: nginx
         state: present
 
-    - name: Start and enable chrony
+    - name: Start and enable nginx
       ansible.builtin.service:
-        name: chronyd
+        name: nginx
         state: started
         enabled: true

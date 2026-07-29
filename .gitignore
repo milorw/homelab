@@ -8,6 +8,8 @@ vault_pass_1password.sh
 # editor/tooling
 .vscode
 .obsidian
+.direnv/
+.envrc.local
 
 # ansible runtime artifacts
 *.retry

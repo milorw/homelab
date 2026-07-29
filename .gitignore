@@ -10,6 +10,7 @@ vault_pass_1password.sh
 .obsidian
 .direnv/
 .envrc.local
+.cache
 
 # ansible runtime artifacts
 *.retry

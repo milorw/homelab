@@ -8,9 +8,11 @@ Ansible is the source of truth for this setup: every LXC and service is defined 
 
 ## Repository layout
 
-- `inventory/` - static inventory for the Proxmox node, the Proxmox plugin for LXCs/VMs, and group vars (including Vault-encrypted secrets)
-- `roles/` - Reusable Ansible components
-- `playbooks/` - Ansible entry points
+- `ansible/` - Ansible source of truth
+  - `inventory/` - static inventory for the Proxmox node, the Proxmox plugin for LXCs/VMs, and group vars (including Vault-encrypted secrets)
+  - `roles/` - Reusable Ansible components
+  - `playbooks/` - Ansible entry points
+- `terraform/` - Terraform-managed infrastructure
 - `docs/` - reference notes
 
 ## Validation

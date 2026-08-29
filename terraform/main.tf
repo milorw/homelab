@@ -38,7 +38,7 @@ resource "proxmox_virtual_environment_container" "lxc" {
     }
 
     user_account {
-      keys = [trimspace(file("~/.ssh/ansible_proxmox.pub"))]
+      keys = [trimspace(var.proxmox_ssh_public_key)]
     }
   }
 

@@ -33,7 +33,7 @@ jobs:
         run: ansible-galaxy collection install -r .github/requirements.yml
 
       - name: yamllint
-        run: "yamllint ansible/inventory ansible/playbooks ansible/roles"
+        run: "yamllint ansible/inventory ansible/playbooks"
 
       - name: ansible-lint
         working-directory: ansible

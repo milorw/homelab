@@ -13,13 +13,30 @@ token_secret: !vault |
           3664613434353563356439383534346562333664343365396263
 
 validate_certs: false
-
-# Only surface LXC containers
 exclude_nodes: true
-filters:
-  - "proxmox_vmtype == 'lxc'"
 
-want_facts: true # needed for IP/tag facts
+want_facts: true
+
+# Only guests Terraform owns
+filters:
+  - "'terraform' in (proxmox_tags_parsed | default([]))"
+
+keyed_groups:
+  # role_samba -> group "samba"
+  - key: proxmox_tags_parsed | select('match', '^role_') | map('regex_replace', '^role_', '') | list
+    prefix: ""
+    separator: ""
+
+  # every tag verbatim -> tag_terraform, tag_lxc, tag_role_samba
+  - key: proxmox_tags_parsed
+    prefix: tag
+    separator: "_"
+
+  # lxc / qemu split
+  - key: proxmox_vmtype
+    prefix: type
 
 compose:
-  ansible_host: proxmox_net0.ip | ipaddr('address')
+  ansible_host: proxmox_net0.ip | ansible.utils.ipaddr('address')
+
+strict: false

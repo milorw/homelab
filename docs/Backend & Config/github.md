@@ -12,4 +12,4 @@ It begins by cloning the repo ***using a fetch-depth of 0*** so Gitleaks can sca
 
 Next, it installs Python (`3.12`), then `yamllint` and `ansible-lint` via pip (and caches the install for reuse).
 
-It then runs `yamllint` against `inventory`, `playbooks`, and `roles` directories, and `ansible-lint` against the `playbooks` directory.
+It then runs `yamllint` against the `ansible/inventory`, `ansible/playbooks`, and `ansible/roles` directories, and `ansible-lint` against the `ansible/playbooks` directory.

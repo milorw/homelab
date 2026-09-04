@@ -12,20 +12,8 @@
     edge_caddy_state_dir: "{{ edge_root }}/caddy-state"
 
   tasks:
-    - name: Install Docker
-      ansible.builtin.apt:
-        name:
-          - docker.io
-          - docker-compose
-        state: present
-        update_cache: true
-        cache_valid_time: 3600
-
-    - name: Ensure docker is running
-      ansible.builtin.systemd:
-        name: docker
-        state: started
-        enabled: true
+    - name: Set up Docker
+      ansible.builtin.include_tasks: tasks/docker.yml
 
     - name: Ensure tailscale is installed
       ansible.builtin.apt:

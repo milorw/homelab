@@ -1,0 +1,76 @@
+- name: Configure samba LXC
+  hosts: samba
+  gather_facts: true
+
+  tasks:
+    - name: Install Samba
+      ansible.builtin.apt:
+        name: samba
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    # Pinned GIDs - these must match the IDs owning the data
+    # on /tank or every share breaks.
+    - name: Create groups
+      ansible.builtin.group:
+        name: "{{ item.name }}"
+        gid: "{{ item.gid }}"
+        state: present
+      loop: "{{ samba_groups }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.gid }})"
+
+    - name: Create users
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        uid: "{{ item.uid }}"
+        group: "{{ item.group }}"
+        groups: "{{ item.groups }}"
+        append: false
+        comment: "{{ item.comment }}"
+        shell: /bin/bash
+      loop: "{{ samba_users }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.uid }})"
+
+    - name: Set Samba passwords
+      ansible.builtin.command:
+        cmd: "smbpasswd -s -a {{ item.name }}"
+        stdin: "{{ item.password }}\n{{ item.password }}\n"
+      loop: "{{ samba_users }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+      changed_when: false
+
+    - name: Ensure share directories have the right ownership
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop: "{{ samba_share_dirs }}"
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Render smb.conf
+      ansible.builtin.template:
+        src: samba/smb.conf.j2
+        dest: /etc/samba/smb.conf
+        mode: "0644"
+        validate: testparm -s %s
+      notify: Restart smbd
+
+    - name: Ensure smbd is running
+      ansible.builtin.systemd:
+        name: smbd
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart smbd
+      ansible.builtin.systemd:
+        name: smbd
+        state: restarted

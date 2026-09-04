@@ -1,0 +1,50 @@
+{# Managed by Ansible (lxc-samba.yml). Do not edit by hand. #}
+
+[global]
+   server role = standalone server
+   security = user
+   map to guest = never
+   smb ports = 445
+   server signing = mandatory
+
+   # Symlinks across the bind-mount stack
+   unix extensions = no
+   follow symlinks = yes
+   wide links = yes
+
+   # macOS — keep fruit, drop acl_xattr
+   vfs objects = catia fruit streams_xattr
+   fruit:aapl = yes
+   fruit:metadata = stream
+   fruit:resource = stream
+   fruit:posix_rename = yes
+   fruit:veto_appledouble = yes
+   fruit:nfs_aces = no
+   ea support = yes
+   veto files = /.DS_Store/
+   delete veto files = yes
+
+   # Performance
+   socket options = TCP_NODELAY IPTOS_LOWDELAY
+   aio read size = 1
+   aio write size = 1
+   use sendfile = yes
+{% for name, s in samba_shares.items() %}
+
+[{{ name }}]
+   path = {{ s.path }}
+   comment = {{ s.comment }}
+   browseable = {{ s.browseable | default('yes') }}
+   read only = {{ s.read_only | default('no') }}
+   valid users = {{ s.valid_users }}
+{% if s.write_list is defined %}
+   write list = {{ s.write_list }}
+{% endif %}
+{% if s.force_group is defined %}
+   force group = {{ s.force_group }}
+{% endif %}
+   create mask = {{ s.create_mask }}
+   force create mode = {{ s.create_mask }}
+   directory mask = {{ s.directory_mask }}
+   force directory mode = {{ s.directory_mask }}
+{% endfor %}

@@ -1,0 +1,15 @@
+{# Managed by Ansible (docker-apps.yml). Do not edit by hand. #}
+
+services:
+  ombi:
+    image: lscr.io/linuxserver/ombi:latest
+    container_name: ombi
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+    volumes:
+      - /srv/appdata/ombi_data:/config
+    ports:
+      - "{{ service_ports.ombi }}:3579"
+    restart: unless-stopped

@@ -1,0 +1,11 @@
+# Canonical port registry. Referenced by both an app's own deployment
+# (docker-apps.yml, lxc-minecraft.yml) and the edge router's reverse-proxy
+# config (edge_router.yml), so a port only ever needs to change in one
+# place. Lives in group_vars/all since docker_apps, minecraft, and
+# edge_router are all different hosts that need to see it.
+service_ports:
+  homebox: 3100
+  ombi: 3579
+  sure: 3000
+  minecraft: 25565
+  crafty: 8443

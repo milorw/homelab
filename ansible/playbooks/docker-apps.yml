@@ -1,0 +1,90 @@
+- name: Configure docker apps LXC
+  hosts: apps
+  gather_facts: true
+
+  vars:
+    apps_root: /opt/apps
+
+  tasks:
+    - name: Set up Docker
+      ansible.builtin.include_tasks: tasks/docker.yml
+
+    - name: Create per-app compose directories
+      ansible.builtin.file:
+        path: "{{ apps_root }}/{{ item }}"
+        state: directory
+        mode: "0750"
+      loop:
+        - homebox
+        - ombi
+        - sure
+
+    - name: Render homebox compose file
+      ansible.builtin.template:
+        src: apps/homebox.compose.yaml.j2
+        dest: "{{ apps_root }}/homebox/compose.yaml"
+        mode: "0644"
+      notify: Recreate homebox
+
+    - name: Render homebox .env
+      ansible.builtin.template:
+        src: apps/homebox.env.j2
+        dest: "{{ apps_root }}/homebox/.env"
+        mode: "0600"
+      no_log: true
+      notify: Recreate homebox
+
+    - name: Bring up homebox
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/homebox"
+        state: present
+
+    - name: Render ombi compose file
+      ansible.builtin.template:
+        src: apps/ombi.compose.yaml.j2
+        dest: "{{ apps_root }}/ombi/compose.yaml"
+        mode: "0644"
+      notify: Recreate ombi
+
+    - name: Bring up ombi
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/ombi"
+        state: present
+
+    - name: Deploy sure compose file
+      ansible.builtin.copy:
+        src: apps/sure/compose.yaml
+        dest: "{{ apps_root }}/sure/compose.yaml"
+        mode: "0644"
+
+    - name: Render sure .env
+      ansible.builtin.template:
+        src: apps/sure.env.j2
+        dest: "{{ apps_root }}/sure/.env"
+        mode: "0600"
+      no_log: true
+      notify: Recreate sure
+
+    - name: Bring up sure
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/sure"
+        state: present
+
+  handlers:
+    - name: Recreate homebox
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/homebox"
+        state: present
+        recreate: always
+
+    - name: Recreate ombi
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/ombi"
+        state: present
+        recreate: always
+
+    - name: Recreate sure
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/sure"
+        state: present
+        recreate: always

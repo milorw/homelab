@@ -1,0 +1,19 @@
+{# Managed by Ansible (docker-apps.yml). Do not edit by hand. #}
+
+services:
+  homebox:
+    image: ghcr.io/sysadminsmedia/homebox:latest
+    container_name: homebox
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - TZ=America/Los_Angeles
+      - HBOX_LOG_LEVEL=info
+      - HBOX_LOG_FORMAT=text
+      - HBOX_WEB_MAX_UPLOAD_SIZE=50
+      - HBOX_OPTIONS_ALLOW_REGISTRATION=false
+    ports:
+      - "{{ service_ports.homebox }}:7745"
+    volumes:
+      - /srv/appdata/homebox_data:/data

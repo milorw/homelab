@@ -1,0 +1,20 @@
+{# Managed by Ansible (edge-router.yml). Do not edit by hand. #}
+
+global
+    maxconn 256
+
+defaults
+    mode tcp
+    timeout connect 5s
+    timeout client 2m
+    timeout server 2m
+
+{% for name, svc in edge_tcp_services.items() %}
+frontend {{ name }}_in
+    bind {{ edge_tailscale_ip }}:{{ svc.listen_port }}
+    bind {{ ansible_host }}:{{ svc.listen_port }}
+    default_backend {{ name }}_be
+
+backend {{ name }}_be
+    server {{ name }} {{ svc.address }}:{{ svc.backend_port }}
+{% endfor %}

@@ -1,0 +1,44 @@
+{# Managed by Ansible (edge-router.yml). Do not edit by hand. #}
+
+{% for domain, dattrs in edge_domains.items() %}
+({{ domain.split('.')[0] }}_cf) {
+  tls {
+    dns cloudflare {env.{{ dattrs.cf_env_name }}}
+  }
+}
+{% endfor %}
+{% for service, attrs in edge_services.items() %}
+({{ service }}) {
+  bind {{ edge_tailscale_ip }} {{ ansible_host }}
+  encode {{ attrs.encodings | join(' ') }}
+{% for rp in attrs.reverse_proxy %}
+{% set prefix = (rp.path ~ ' ') if rp.path is defined else '' %}
+{% if rp.headers is defined or rp.transport_http is defined %}
+  reverse_proxy {{ prefix }}{{ rp.address }}:{{ rp.port }} {
+{% if rp.headers is defined %}
+{% for hdr, val in rp.headers.items() %}
+    header_up {{ hdr }} {{ '{host}' if val == 'host' else ('{upstream_hostport}' if val == 'upstream' else val) }}
+{% endfor %}
+{% endif %}
+{% if rp.transport_http is defined %}
+    transport http {
+      {{ rp.transport_http }}
+    }
+{% endif %}
+  }
+{% else %}
+  reverse_proxy {{ prefix }}{{ rp.address }}:{{ rp.port }}
+{% endif %}
+{% endfor %}
+}
+{% endfor %}
+{% for service, sattrs in edge_services.items() %}
+{% for domain, dattrs in edge_domains.items() %}
+{% if service in dattrs.services %}
+{{ service }}.{{ domain }} {
+  import {{ domain.split('.')[0] }}_cf
+  import {{ service }}
+}
+{% endif %}
+{% endfor %}
+{% endfor %}

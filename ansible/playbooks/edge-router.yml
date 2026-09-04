@@ -1,0 +1,171 @@
+- name: Configure edge router (Caddy + CoreDNS)
+  hosts: edge_router
+  gather_facts: true
+  # Handlers run at the end of a play, so a failure partway through would
+  # otherwise leave a rendered config file on disk that never gets loaded
+  force_handlers: true
+
+  vars:
+    edge_root: /opt/edge
+    edge_config_dir: "{{ edge_root }}/config"
+    edge_data_dir: "{{ edge_root }}/data"
+    edge_caddy_state_dir: "{{ edge_root }}/caddy-state"
+
+  tasks:
+    - name: Install Docker
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-compose
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Ensure docker is running
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Ensure tailscale is installed
+      ansible.builtin.apt:
+        name: tailscale
+        state: present
+
+    - name: Ensure tailscaled is running
+      ansible.builtin.systemd:
+        name: tailscaled
+        state: started
+        enabled: true
+
+    - name: Read tailscale status
+      ansible.builtin.command: tailscale status --json
+      register: tailscale_status_raw
+      changed_when: false
+      failed_when: false # tailscale exits 1 when not connected
+
+    - name: Parse tailscale status
+      ansible.builtin.set_fact:
+        tailscale_status: "{{ tailscale_status_raw.stdout | from_json }}"
+
+    - name: Fail if tailscale needs manual intervention
+      ansible.builtin.fail:
+        msg: >-
+          tailscale on {{ inventory_hostname }} is not connected
+          (BackendState={{ tailscale_status.BackendState }}).
+          {{ ('Auth needed: ' ~ tailscale_status.AuthURL) if tailscale_status.AuthURL
+             else 'Run `tailscale up` on the host to diagnose and reconnect.' }}
+      when: tailscale_status.BackendState != 'Running'
+
+    - name: Set tailscale IP fact
+      ansible.builtin.set_fact:
+        edge_tailscale_ip: "{{ tailscale_status.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
+
+    - name: Create config/data directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "{{ item.mode }}"
+      loop:
+        # config is 0755 because it's mounted as a directory, so processes inside
+        # the containers have to traverse it - and the haproxy image runs as a
+        # non-root user. Nothing secret lives here; the Cloudflare tokens are in
+        # {{ edge_root }}/.env (0600).
+        - { path: "{{ edge_config_dir }}", mode: "0755" }
+        # data holds Caddy's certificate private keys - keep it tight
+        - { path: "{{ edge_data_dir }}", mode: "0750" }
+        - { path: "{{ edge_caddy_state_dir }}", mode: "0750" }
+        - { path: "{{ edge_root }}/caddy", mode: "0755" }
+      loop_control:
+        label: "{{ item.path }}"
+
+    - name: Render Corefile
+      ansible.builtin.template:
+        src: edge_router/Corefile.j2
+        dest: "{{ edge_config_dir }}/Corefile"
+        mode: "0644"
+      notify: Restart coredns
+
+    - name: Render Caddyfile
+      ansible.builtin.template:
+        src: edge_router/Caddyfile.j2
+        dest: "{{ edge_config_dir }}/Caddyfile"
+        mode: "0644"
+      # No notify - the unconditional reload after the stack comes up covers
+      # this, so a config that gets rendered but never loaded can't happen.
+
+    - name: Render haproxy.cfg
+      ansible.builtin.template:
+        src: edge_router/haproxy.cfg.j2
+        dest: "{{ edge_config_dir }}/haproxy.cfg"
+        mode: "0644"
+      notify: Restart haproxy
+
+    - name: Deploy compose project file
+      ansible.builtin.copy:
+        src: edge/compose.yaml
+        dest: "{{ edge_root }}/compose.yaml"
+        mode: "0644"
+
+    - name: Deploy caddy build context
+      ansible.builtin.copy:
+        src: edge/caddy/Dockerfile
+        dest: "{{ edge_root }}/caddy/Dockerfile"
+        mode: "0644"
+
+    - name: Render .env with Cloudflare tokens
+      ansible.builtin.template:
+        src: edge_router/edge.env.j2
+        dest: "{{ edge_root }}/.env"
+        mode: "0600"
+      no_log: true
+      notify: Recreate stack
+
+    - name: Bring up the stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ edge_root }}"
+        state: present
+
+    # Convergence rather than a change: `caddy reload` is a no-op when the
+    # running config already matches ("config is unchanged" in the log).
+    # Safe to run unconditionally now that config is a directory mount - the
+    # container genuinely sees the current file, so this can't push a stale
+    # view back. It also means a Caddyfile rendered by a run that died
+    # before its handler can't stay unloaded forever.
+    # -T because there's no TTY under Ansible.
+    - name: Ensure Caddy has loaded the current Caddyfile
+      ansible.builtin.command: docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+      args:
+        chdir: "{{ edge_root }}"
+      changed_when: false
+      # `docker compose up` returns once containers are started, which is a
+      # moment before Caddy's admin API is actually listening - and any run
+      # that changes the compose file recreates them, so this races.
+      register: caddy_reload
+      until: caddy_reload.rc == 0
+      retries: 5
+      delay: 3
+
+  handlers:
+    # changed_when: true - these only ever run because a config file changed,
+    # and restarting a container is a real state change. Ansible can't infer
+    # that from a bare command, hence declaring it.
+    - name: Restart coredns
+      ansible.builtin.command: docker compose restart coredns
+      args:
+        chdir: "{{ edge_root }}"
+      changed_when: true
+
+    - name: Restart haproxy
+      ansible.builtin.command: docker compose restart haproxy
+      args:
+        chdir: "{{ edge_root }}"
+      changed_when: true
+
+    # Env vars are only read when a container is created, so a .env change
+    # genuinely needs a recreate - a restart won't pick it up.
+    - name: Recreate stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ edge_root }}"
+        state: present
+        recreate: always

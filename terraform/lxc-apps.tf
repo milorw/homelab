@@ -1,14 +1,14 @@
-resource "proxmox_virtual_environment_container" "minecraft" {
+resource "proxmox_virtual_environment_container" "docker_apps" {
   node_name     = var.pve_node
-  vm_id         = 110
-  unprivileged  = true
+  vm_id         = 104
+  unprivileged  = false
   start_on_boot = true
   started       = true
 
-  tags = ["terraform", "lxc", "role_minecraft"]
+  tags = ["terraform", "lxc", "role_docker_apps"]
 
   cpu {
-    cores = 4
+    cores = 2
   }
 
   memory {
@@ -17,16 +17,16 @@ resource "proxmox_virtual_environment_container" "minecraft" {
   }
 
   features {
-    keyctl  = true
+    fuse    = true
     nesting = true
   }
 
   initialization {
-    hostname = "minecraft.local"
+    hostname = "apps"
 
     ip_config {
       ipv4 {
-        address = local.lxc_ips.minecraft
+        address = local.lxc_ips.docker_apps
         gateway = local.network.gateway
       }
     }
@@ -44,21 +44,24 @@ resource "proxmox_virtual_environment_container" "minecraft" {
 
   disk {
     datastore_id = "local-lvm"
-    size         = 16
+    size         = 50
   }
 
   network_interface {
     name        = "eth0"
     bridge      = local.network.bridge
     firewall    = true
-    mac_address = "BC:24:11:2F:EE:D7"
+    mac_address = "BC:24:11:9F:D1:A9"
   }
 
   mount_point {
-    volume = "local-lvm:vm-110-disk-1"
-    path   = "/srv/minecraft"
-    size   = "32G"
-    backup = true
+    volume = local.storage.tank_shares_mrw
+    path   = "/srv/share"
+  }
+
+  mount_point {
+    volume = local.storage.tank_appdata
+    path   = "/srv/appdata"
   }
 
   lifecycle {

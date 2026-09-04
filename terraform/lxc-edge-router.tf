@@ -1,19 +1,19 @@
-resource "proxmox_virtual_environment_container" "minecraft" {
+resource "proxmox_virtual_environment_container" "edge_router" {
   node_name     = var.pve_node
-  vm_id         = 110
+  vm_id         = 105
   unprivileged  = true
   start_on_boot = true
   started       = true
 
-  tags = ["terraform", "lxc", "role_minecraft"]
+  tags = ["terraform", "lxc", "role_edge_router"]
 
   cpu {
-    cores = 4
+    cores = 2
   }
 
   memory {
-    dedicated = 3072
-    swap      = 2048
+    dedicated = 512
+    swap      = 512
   }
 
   features {
@@ -22,11 +22,11 @@ resource "proxmox_virtual_environment_container" "minecraft" {
   }
 
   initialization {
-    hostname = "minecraft.local"
+    hostname = "edge"
 
     ip_config {
       ipv4 {
-        address = local.lxc_ips.minecraft
+        address = local.lxc_ips.edge_router
         gateway = local.network.gateway
       }
     }
@@ -44,21 +44,14 @@ resource "proxmox_virtual_environment_container" "minecraft" {
 
   disk {
     datastore_id = "local-lvm"
-    size         = 16
+    size         = 10
   }
 
   network_interface {
     name        = "eth0"
     bridge      = local.network.bridge
     firewall    = true
-    mac_address = "BC:24:11:2F:EE:D7"
-  }
-
-  mount_point {
-    volume = "local-lvm:vm-110-disk-1"
-    path   = "/srv/minecraft"
-    size   = "32G"
-    backup = true
+    mac_address = "BC:24:11:AB:EF:75"
   }
 
   lifecycle {

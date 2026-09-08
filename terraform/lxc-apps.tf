@@ -12,7 +12,7 @@ resource "proxmox_virtual_environment_container" "docker_apps" {
   }
 
   memory {
-    dedicated = 3072
+    dedicated = 4096
     swap      = 2048
   }
 
@@ -34,6 +34,10 @@ resource "proxmox_virtual_environment_container" "docker_apps" {
     dns {
       domain  = local.network.domain
       servers = local.network.dns_servers
+    }
+
+    user_account {
+      keys = [trimspace(var.proxmox_ssh_public_key)]
     }
   }
 

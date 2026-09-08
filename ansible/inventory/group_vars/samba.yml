@@ -1,0 +1,58 @@
+# Vars for the samba group
+
+# IDs that already own the data on /tank:
+#   34955 files  1000:1060   mrw:jellyfin_srv
+#    1522 files  1001:1060   owen:jellyfin_srv
+#   plus mrw:nas_shared on common, and each user's own home
+
+samba_groups:
+  - { name: mrw, gid: 1000 }
+  - { name: owen, gid: 1001 }
+  - { name: nas_shared, gid: 1050 }
+  - { name: jellyfin_srv, gid: 1060 }
+  - { name: media, gid: 2000 }
+
+samba_users:
+  - name: mrw
+    uid: 1000
+    group: mrw
+    groups: [nas_shared, jellyfin_srv]
+    comment: ""
+    password: "{{ vault_smb_password_mrw }}"
+  - name: owen
+    uid: 1001
+    group: owen
+    groups: [nas_shared, jellyfin_srv]
+    comment: ""
+    password: "{{ vault_smb_password_owen }}"
+
+samba_share_dirs:
+  - { path: /srv/shares/common, owner: mrw, group: nas_shared, mode: "2770" }
+  - { path: /srv/shares/jellyfin, owner: mrw, group: jellyfin_srv, mode: "2775" }
+  - { path: /srv/shares/mrw, owner: mrw, group: mrw, mode: "0700" }
+  - { path: /srv/shares/owen, owner: owen, group: owen, mode: "0700" }
+
+samba_shares:
+  Common:
+    path: /srv/shares/common
+    comment: Shared NAS Storage
+    valid_users: "@nas_shared"
+    force_group: nas_shared
+    create_mask: "0660"
+    directory_mask: "2770"
+
+  Jellyfin-Media:
+    path: /srv/shares/jellyfin
+    comment: Media Library
+    valid_users: "@jellyfin_srv"
+    write_list: "@jellyfin_srv"
+    force_group: jellyfin_srv
+    create_mask: "0664"
+    directory_mask: "2775"
+
+  Personal:
+    path: /srv/shares/%U
+    comment: Private Home Folder
+    valid_users: "%U"
+    create_mask: "0600"
+    directory_mask: "0700"

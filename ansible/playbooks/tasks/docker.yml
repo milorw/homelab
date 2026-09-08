@@ -1,0 +1,38 @@
+# Shared Docker setup, included by every playbook that runs containers, so
+# the install method can't drift between LXCs.
+
+- name: Install Docker
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure docker is running
+  ansible.builtin.systemd_service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Check Docker Compose v2 availability
+  ansible.builtin.command: docker compose version --short
+  register: compose_version
+  changed_when: false
+  failed_when: false
+
+- name: Fail if Docker Compose v2 is missing
+  ansible.builtin.fail:
+    msg: >-
+      `docker compose` (v2) is not usable on {{ inventory_hostname }}
+      (rc={{ compose_version.rc }},
+      output: '{{ compose_version.stdout | default('') | trim }}').
+      Debian ships Compose v1 on bookworm and v2 on trixie, so this usually
+      means the LXC is on an older base image than expected - check
+      /etc/os-release. Docker's own apt repo (docker-ce +
+      docker-compose-plugin) is the alternative if a box has to stay on
+      bookworm.
+  when: >-
+    compose_version.rc != 0
+    or (compose_version.stdout | default('') | regex_replace('^v', '')).split('.')[0] | int < 2

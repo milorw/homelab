@@ -1,0 +1,24 @@
+{# Managed by Ansible (edge-router.yml). Do not edit by hand. #}
+
+.:53 {
+  errors
+  log
+  health
+  ready
+
+  hosts {
+{# Answer with both the tailscale IP and the edge router's LAN IP, so the
+   same hostname resolves whether or not the client is on the tailnet.
+   Caddy and HAProxy bind both addresses to match. #}
+{% for domain, attrs in edge_domains.items() %}
+{% set advertised = (edge_services.keys() | list) + (edge_tcp_services.keys() | list) %}
+{% for ip in [edge_tailscale_ip, ansible_host] %}
+    {{ ip }} {% for svc in advertised if svc in attrs.services %}{{ svc }}.{{ domain }}{{ ' ' if not loop.last }}{% endfor %}
+
+{% endfor %}
+{% endfor %}
+    fallthrough
+  }
+  forward . 1.1.1.1 8.8.8.8
+  cache 30
+}

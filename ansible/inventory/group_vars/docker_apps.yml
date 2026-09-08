@@ -1,0 +1,15 @@
+# Vars for the docker_apps group.
+
+apps_root: /opt/apps
+
+# --- sure ---
+sure_postgres_user: sure_user
+sure_postgres_db: sure_production
+sure_ai_model: "gpt-5-mini-2025-08-07"
+sure_ai_uri_base: "https://api.openai.com/v1/"
+
+# Secrets, pulled from vault.
+homebox_api_key_pepper: "{{ vault_homebox_api_key_pepper }}"
+sure_postgres_password: "{{ vault_sure_postgres_password }}"
+sure_secret_key_base: "{{ vault_sure_secret_key_base }}"
+sure_ai_access_token: "{{ vault_sure_ai_access_token }}"

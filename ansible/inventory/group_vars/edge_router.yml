@@ -1,0 +1,99 @@
+# Cloudflare API tokens, pulled from vault
+cf_api_token_milorw: "{{ vault_cf_api_token_milorw }}"
+cf_api_token_owennwb: "{{ vault_cf_api_token_owennwb }}"
+
+# env var name (as referenced by the Caddyfile's {env.NAME}) -> token value
+edge_cf_tokens:
+  CF_API_TOKEN_MILORW: "{{ cf_api_token_milorw }}"
+  CF_API_TOKEN_OWENNWB: "{{ cf_api_token_owennwb }}"
+
+# Backend addresses resolved live from inventory, so no IP managed by this
+# repo is duplicated here.
+docker_apps_ip: "{{ hostvars[groups['docker_apps'][0]].ansible_host }}"
+minecraft_ip: "{{ hostvars[groups['minecraft'][0]].ansible_host }}"
+proxmox_ip: "{{ hostvars[groups['proxmox_nodes'][0]].ansible_host }}"
+
+edge_domains:
+  milorw.me:
+    cf_env_name: CF_API_TOKEN_MILORW
+    services:
+      - homebox
+      - sure
+      - proxmox
+      - jellyfin
+      - ombi
+      - ha
+      - minecraft
+      - mcpanel
+
+  owennwb.com:
+    cf_env_name: CF_API_TOKEN_OWENNWB
+    services:
+      - homebox
+      - sure
+      - jellyfin
+      - ombi
+      - ha
+      - minecraft
+
+edge_services:
+  homebox:
+    encodings: [gzip, zstd]
+    reverse_proxy:
+      - address: "{{ docker_apps_ip }}"
+        port: "{{ service_ports.homebox }}"
+
+  sure:
+    encodings: [gzip, zstd]
+    reverse_proxy:
+      - address: "{{ docker_apps_ip }}"
+        port: "{{ service_ports.sure }}"
+
+  # Proxmox's web UI is HTTPS-only with a self-signed cert, so the backend
+  # connection needs TLS with verification skipped, not plain HTTP.
+  proxmox:
+    encodings: [gzip, zstd]
+    reverse_proxy:
+      - address: "{{ proxmox_ip }}"
+        port: 8006
+        transport_http: tls_insecure_skip_verify
+
+  # Literal: not Terraform-managed yet, so nothing in inventory to
+  # resolve it against (see docs/TODO.md).
+  jellyfin:
+    encodings: [gzip, zstd]
+    reverse_proxy:
+      - address: 192.168.68.97
+        port: 8096
+
+  ombi:
+    encodings: [gzip, zstd]
+    reverse_proxy:
+      - address: "{{ docker_apps_ip }}"
+        port: "{{ service_ports.ombi }}"
+
+  # Literal: Home Assistant is a separate appliance, not a guest this
+  # repo manages.
+  ha:
+    encodings: [gzip, zstd]
+    reverse_proxy:
+      - address: 192.168.68.2
+        port: 8123
+
+  mcpanel:
+    encodings: [gzip, zstd]
+    reverse_proxy:
+      - address: "{{ minecraft_ip }}"
+        port: "{{ service_ports.crafty }}"
+        transport_http: tls_insecure_skip_verify
+        headers:
+          Host: host
+
+# Raw-TCP services, forwarded by HAProxy rather than Caddy's HTTP-only
+# reverse_proxy. Still get a CoreDNS hostname so minecraft.domainname
+# resolves, just not an HTTP route through Caddy.
+edge_tcp_services:
+  minecraft:
+    listen_port: "{{ service_ports.minecraft }}"
+    backend_port: "{{ service_ports.minecraft }}"
+    address: "{{ minecraft_ip }}"

@@ -1,7 +1,7 @@
 resource "proxmox_virtual_environment_container" "samba" {
   node_name     = var.pve_node
   vm_id         = 100
-  unprivileged  = true
+  unprivileged  = false
   start_on_boot = true
   started       = true
 
@@ -35,10 +35,14 @@ resource "proxmox_virtual_environment_container" "samba" {
       domain  = local.network.domain
       servers = local.network.dns_servers
     }
+
+    user_account {
+      keys = [trimspace(var.proxmox_ssh_public_key)]
+    }
   }
 
   operating_system {
-    template_file_id = "local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
+    template_file_id = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
     type             = "debian"
   }
 
@@ -79,53 +83,6 @@ resource "proxmox_virtual_environment_container" "samba" {
   mount_point {
     volume = local.storage.tank_shares_mrw
     path   = "/srv/shares/mrw"
-  }
-  mount_point {
-    volume = local.storage.service_configs_samba
-    path   = "/etc/samba"
-  }
-
-  # lxc.idmap - one block per line, uid and gid separately
-  idmap {
-    type         = "uid"
-    container_id = 0
-    host_id      = 100000
-    size         = 1000
-  }
-
-  idmap {
-    type         = "gid"
-    container_id = 0
-    host_id      = 100000
-    size         = 1000
-  }
-
-  idmap {
-    type         = "uid"
-    container_id = 1000
-    host_id      = 1000
-    size         = 101
-  }
-
-  idmap {
-    type         = "gid"
-    container_id = 1000
-    host_id      = 1000
-    size         = 101
-  }
-
-  idmap {
-    type         = "uid"
-    container_id = 1101
-    host_id      = 101101
-    size         = 64435
-  }
-
-  idmap {
-    type         = "gid"
-    container_id = 1101
-    host_id      = 101101
-    size         = 64435
   }
 
   lifecycle {

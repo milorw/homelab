@@ -1,7 +1,7 @@
 resource "proxmox_virtual_environment_container" "minecraft" {
   node_name     = var.pve_node
   vm_id         = 110
-  unprivileged  = true
+  unprivileged  = false
   start_on_boot = true
   started       = true
 
@@ -12,7 +12,7 @@ resource "proxmox_virtual_environment_container" "minecraft" {
   }
 
   memory {
-    dedicated = 3072
+    dedicated = 6144
     swap      = 2048
   }
 
@@ -35,6 +35,12 @@ resource "proxmox_virtual_environment_container" "minecraft" {
       domain  = local.network.domain
       servers = local.network.dns_servers
     }
+
+    # Without this the container is created with no authorized key and
+    # Ansible can't reach it at all.
+    user_account {
+      keys = [trimspace(var.proxmox_ssh_public_key)]
+    }
   }
 
   operating_system {
@@ -54,15 +60,24 @@ resource "proxmox_virtual_environment_container" "minecraft" {
     mac_address = "BC:24:11:2F:EE:D7"
   }
 
+  # Host bind mount on SSD, not an LXC-owned volume - survives a rebuild.
+  # World data ONLY: this is the host's boot drive, so nothing else goes
+  # here. Crafty keeps world data entirely under /crafty/servers.
   mount_point {
-    volume = "local-lvm:vm-110-disk-1"
+    volume = local.storage.ssd_minecraft
     path   = "/srv/minecraft"
-    size   = "32G"
-    backup = true
+  }
+
+  # Everything else Crafty needs to persist but not to be fast: its config
+  # (SQLite DB, users, server definitions), logs, import staging and
+  # backups. Keeps the boot SSD free of anything but world data.
+  mount_point {
+    volume = local.storage.tank_appdata
+    path   = "/srv/appdata"
   }
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes  = [operating_system[0].template_file_id]
   }
 }

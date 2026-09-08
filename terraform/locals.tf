@@ -25,5 +25,9 @@ locals {
     tank_shares_mrw       = "/tank/shares/mrw"
     tank_appdata          = "/tank/appdata"
     service_configs_samba = "/server_conf/service_configs/samba"
+
+    # SSD-backed host directory, deliberately a plain host path, so it
+    # survives an LXC rebuild while keeping SSD speed for world loading.
+    ssd_minecraft = "/ssd/minecraft"
   }
 }

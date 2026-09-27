@@ -12,7 +12,19 @@ Proxmox has a primary storage location (`tank/`) that contains all service appda
 - `tank/jellyfin/...` - owned by Jellyfin, all media files
 - `tank/backups/...` - managed by Proxmox, all system backups
 
-Proxmox also hosts a "router" LXC (Caddy + CoreDNS), which provides custom domain resolution over Tailscale or on my LAN network. Domain resolution is purposefully not made available to wider internet for security, but launching Tailscale and then navigating to a simple URL allows non-technical users to connect to services quickly.
+Proxmox also hosts a "router" LXC (Caddy + CoreDNS + HAProxy), which provides custom domain resolution and HTTPS over Tailscale or on my LAN network. Domain resolution is purposefully not made available to wider internet for security, but launching Tailscale and then navigating to a simple URL allows non-technical users to connect to services quickly. The router is also a Tailscale subnet router for the LXCs, so SMB and SSH work remotely.
+
+### LXCs
+
+| ID | LXC | Runs | Playbook |
+|---|---|---|---|
+| 100 | `samba` | Samba NAS shares | `lxc-samba.yml` |
+| 104 | `docker_apps` | Homebox, Ombi, Sure, Mealie, Homepage (Docker Compose) | `docker-apps.yml` |
+| 105 | `edge_router` | Caddy, CoreDNS, HAProxy (Docker Compose), Tailscale | `edge-router.yml` |
+| 106 | `jellyfin` | Jellyfin, with Intel VAAPI transcoding | `lxc-jellyfin.yml` |
+| 110 | `minecraft` | Crafty Controller running a Paper server (Docker Compose) | `lxc-minecraft.yml` |
+
+`lxc-baseline.yml` applies settings shared by every LXC.
 
 ## Repository layout
 
@@ -25,4 +37,4 @@ Proxmox also hosts a "router" LXC (Caddy + CoreDNS), which provides custom domai
 
 ## CI & local workflow
 
-Every push/PR to `main` and every local commit run the same checks: `Gitleaks` for secret scanning, `yamllint`, and `ansible-lint` for file consistency. See `docs/` for more details.
+Every push/PR to `main` and every local commit run the same checks: `Gitleaks` for secret scanning, `yamllint` and `ansible-lint` for Ansible files, and `terraform fmt`, `terraform validate` and `tflint` for Terraform files. See `docs/` for more details.

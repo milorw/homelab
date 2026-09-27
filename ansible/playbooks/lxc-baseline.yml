@@ -1,0 +1,90 @@
+- name: Baseline settings for every LXC
+  hosts: proxmox_all_lxc
+  gather_facts: false
+
+  # Settings that should hold across the whole fleet regardless of what a
+  # container is for. Role-specific configuration belongs in that role's
+  # own playbook - this is only for things it would be wrong to let drift
+  # between containers.
+  #
+  # proxmox_all_lxc is created by the inventory plugin itself (group_prefix
+  # defaults to "proxmox_"), so it covers every LXC without needing a tag.
+
+  tasks:
+
+    # --- SSH root policy ---
+
+    - name: Deploy the root login policy
+      ansible.builtin.template:
+        src: baseline/sshd-root-login.conf.j2
+        dest: /etc/ssh/sshd_config.d/10-root-login.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload sshd
+
+    # A drop-in can't be validated on its own - sshd -t needs the whole
+    # config. So write it, test the result, and pull it back out if it
+    # broke anything. Restarting sshd on a config it rejects would leave
+    # the container unreachable.
+    - name: Validate the resulting sshd config
+      ansible.builtin.command: sshd -t
+      register: sshd_test
+      changed_when: false
+      failed_when: false
+
+    - name: Remove the drop-in if it broke the config
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d/10-root-login.conf
+        state: absent
+      when: sshd_test.rc != 0
+
+    - name: Fail if the config was rejected
+      ansible.builtin.assert:
+        that:
+          - sshd_test.rc == 0
+        fail_msg: >-
+          sshd rejected the config after adding the root-login drop-in, so it
+          has been removed and sshd was NOT restarted - this container is
+          still reachable. sshd -t said: {{ sshd_test.stderr | trim }}
+        quiet: true
+
+    # --- Verification ---
+
+    # The reload is a handler rather than a task on purpose: a failed play
+    # never runs handlers, so the assert above physically cannot be
+    # followed by a reload of a config sshd rejected. Flushing here just
+    # brings it forward so the read-back below sees the new state.
+    - name: Apply the reload before reading the policy back
+      ansible.builtin.meta: flush_handlers
+
+    - name: Read back the effective policy
+      ansible.builtin.command: sshd -T
+      register: sshd_effective
+      changed_when: false
+
+    # sshd -T normalises to the older spelling, so compare against both.
+    - name: Check the effective policy matches what we asked for
+      ansible.builtin.assert:
+        that:
+          - effective in [lxc_permit_root_login, 'without-password' if lxc_permit_root_login == 'prohibit-password' else lxc_permit_root_login]
+        fail_msg: >-
+          Effective PermitRootLogin is '{{ effective }}', expected
+          '{{ lxc_permit_root_login }}'. Something later in the include order
+          is overriding /etc/ssh/sshd_config.d/10-root-login.conf.
+        success_msg: "PermitRootLogin is {{ effective }}"
+      vars:
+        effective: >-
+          {{ sshd_effective.stdout_lines
+             | select('match', '^permitrootlogin ')
+             | first | default('') | split(' ') | last }}
+
+  handlers:
+
+    # ssh.service on Debian; sshd.service is an alias. Reload rather than
+    # restart - an existing session survives either, but reload avoids
+    # dropping anything mid-play.
+    - name: Reload sshd
+      ansible.builtin.systemd:
+        name: "{{ lxc_sshd_service }}"
+        state: reloaded

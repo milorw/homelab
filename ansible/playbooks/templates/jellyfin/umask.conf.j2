@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+#
+# Jellyfin's default umask creates 0644 files and 0755 directories, so the
+# artwork and .trickplay data it writes alongside the media ends up
+# readable but not writable by the jellyfin_srv group - which means samba
+# users can't manage or delete it.
+#
+# Samba already force-creates 0664/2775 into that group (see the
+# Jellyfin-Media share in group_vars/samba.yml). 002 makes jellyfin
+# symmetrical with it, so both sides can maintain the same files.
+[Service]
+UMask=002

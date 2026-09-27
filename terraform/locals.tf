@@ -13,6 +13,7 @@ locals {
     edge_router = "192.168.68.96/22"
     minecraft   = "192.168.68.98/22"
     docker_apps = "192.168.68.95/22"
+    jellyfin    = "192.168.68.97/22"
   }
 
   # Host storage paths shared across LXCs, so containers mounting

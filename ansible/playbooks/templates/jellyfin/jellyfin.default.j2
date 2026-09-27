@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+#
+# /etc/default/jellyfin - read by jellyfin.service.
+#
+# This is the one Jellyfin config file that is safe to template. Everything
+# in {{ jellyfin_config_dir }} is XML that Jellyfin rewrites whenever a
+# setting changes in the web UI, so managing those would mean Ansible and
+# the UI silently undoing each other. This file Jellyfin only ever reads.
+#
+# The directories below are Jellyfin's own defaults, deliberately. They
+# are bind mounts onto /tank/appdata/jellyfin_data (see
+# terraform/lxc-jellyfin.tf), so the data lives on the pool while the
+# paths Jellyfin sees never move.
+#
+# Pointing them somewhere else from here was tried and does not work:
+# Jellyfin stores absolute paths to its own data directory in the
+# database, so the artwork rows all kept referring to /var/lib/jellyfin
+# and every poster 404'd. They are still set explicitly rather than left
+# to the package, so the values are visible and pinned.
+
+JELLYFIN_DATA_DIR="{{ jellyfin_data_dir }}"
+JELLYFIN_CONFIG_DIR="{{ jellyfin_config_dir }}"
+JELLYFIN_LOG_DIR="{{ jellyfin_log_dir }}"
+JELLYFIN_CACHE_DIR="{{ jellyfin_cache_dir }}"
+
+JELLYFIN_WEB_OPT="--webdir=/usr/share/jellyfin/web"
+JELLYFIN_FFMPEG_OPT="--ffmpeg=/usr/lib/jellyfin-ffmpeg/ffmpeg"
+
+# Shipped by the package; jemalloc measurably reduces RSS on long runs.
+LD_PRELOAD=/usr/lib/jellyfin/libjemalloc.so
+MALLOC_TRIM_THRESHOLD_=131072
+
+JELLYFIN_SERVICE_OPT=""
+JELLYFIN_NOWEBAPP_OPT=""
+JELLYFIN_ADDITIONAL_OPTS=""
+
+JELLYFIN_USER="jellyfin"
+JELLYFIN_ARGS="$JELLYFIN_WEB_OPT $JELLYFIN_FFMPEG_OPT $JELLYFIN_SERVICE_OPT $JELLYFIN_NOWEBAPP_OPT $JELLYFIN_ADDITIONAL_OPTS --datadir $JELLYFIN_DATA_DIR --configdir $JELLYFIN_CONFIG_DIR --logdir $JELLYFIN_LOG_DIR --cachedir $JELLYFIN_CACHE_DIR"

@@ -71,6 +71,31 @@
         project_src: "{{ apps_root }}/sure"
         state: present
 
+    # POSTGRES_USER/POSTGRES_PASSWORD only applies when postgres first
+    # initializes its data directory, so a vault password bump never
+    # reaches an existing database.
+    # Reconcile the role with the vault instead, but only when the app's
+    # own credentials are actually rejected.
+    - name: Check sure's database login
+      community.docker.docker_container_exec:
+        container: sure-db-1
+        command: psql -h 127.0.0.1 -U {{ sure_postgres_user }} -d {{ sure_postgres_db }} -tAc "select 1"
+        env:
+          PGPASSWORD: "{{ sure_postgres_password }}"
+      register: sure_db_login
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Reconcile sure's database role with the vault
+      community.docker.docker_container_exec:
+        container: sure-db-1
+        command: psql -U postgres -d {{ sure_postgres_db }} -v ON_ERROR_STOP=1
+        stdin: "{{ lookup('ansible.builtin.template', 'templates/apps/sure-role.sql.j2') }}"
+      when: sure_db_login.rc != 0
+      no_log: true
+      notify: Recreate sure
+
     - name: Render mealie compose file
       ansible.builtin.template:
         src: apps/mealie.compose.yaml.j2

@@ -1,0 +1,33 @@
+-- Managed by Ansible (docker-apps.yml). Do not edit by hand.
+--
+-- Brings sure's database role in line with the Ansible vault.
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{ sure_postgres_user }}') THEN
+    EXECUTE format('CREATE ROLE %I LOGIN', '{{ sure_postgres_user }}');
+  END IF;
+END
+$$;
+
+ALTER ROLE {{ sure_postgres_user }} WITH LOGIN PASSWORD '{{ sure_postgres_password | replace("'", "''") }}';
+
+-- The app runs migrations, so it has to own what it migrates.
+ALTER DATABASE {{ sure_postgres_db }} OWNER TO {{ sure_postgres_user }};
+ALTER SCHEMA public OWNER TO {{ sure_postgres_user }};
+
+DO $$
+DECLARE
+  obj record;
+BEGIN
+  FOR obj IN SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO %I', obj.name, '{{ sure_postgres_user }}');
+  END LOOP;
+  FOR obj IN SELECT sequencename AS name FROM pg_sequences WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER SEQUENCE public.%I OWNER TO %I', obj.name, '{{ sure_postgres_user }}');
+  END LOOP;
+  FOR obj IN SELECT viewname AS name FROM pg_views WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER VIEW public.%I OWNER TO %I', obj.name, '{{ sure_postgres_user }}');
+  END LOOP;
+END
+$$;

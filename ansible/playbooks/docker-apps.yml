@@ -72,11 +72,9 @@
         project_src: "{{ apps_root }}/sure"
         state: present
 
-    # POSTGRES_USER/POSTGRES_PASSWORD only applies when postgres first
-    # initializes its data directory, so a vault password bump never
-    # reaches an existing database.
-    # Reconcile the role with the vault instead, but only when the app's
-    # own credentials are actually rejected.
+    # Postgres only reads its password on first init, so a vault change never
+    # reaches it. Fix the role up only if the app's login is actually rejected
+    # - see docs/Ansible/docker-apps.md.
     - name: Check sure's database login
       community.docker.docker_container_exec:
         container: sure-db-1
@@ -114,9 +112,7 @@
       no_log: true
       notify: Recreate mealie
 
-    # Custom AI prompts, forked from Mealie v3.27.0 to pull ingredient lines
-    # out of steps and combine duplicate ingredients. A custom file replaces
-    # the built-in one entirely.
+    # Custom AI prompts (forked from Mealie v3.27.0) - see docs/Ansible/docker-apps.md.
     - name: Deploy mealie custom AI prompts
       ansible.builtin.copy:
         src: apps/mealie/prompts/
@@ -154,9 +150,8 @@
         - bookmarks.yaml
       notify: Recreate homepage
 
-    # Generated from the edge router's edge_domains, so a service only has
-    # to be added there. Kept out of the loop above because widget API
-    # keys are rendered into it.
+    # Generated from the service catalog. Separate from the loop above
+    # because widget API keys end up in it.
     - name: Render homepage services file
       ansible.builtin.template:
         src: apps/homepage/services.yaml.j2

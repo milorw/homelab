@@ -1,51 +1,34 @@
-# Vars for the jellyfin group (LXC 106, role_jellyfin tag).
-#
-# The container is privileged with no idmap, so every uid and gid in here
-# is the same number on the Proxmox host.
+# Vars for the jellyfin group (LXC 106) - see docs/Ansible/jellyfin.md.
+# The container is privileged with no idmap, so every uid and gid here is
+# the same number on the Proxmox host.
 
 # --- Identity ---
-#
-# Debian allocates system uids dynamically, so an unpinned install would
-# pick whatever is free and then not own its own library. These are the
-# ids the previous container used, and they are what /tank/appdata/
-# jellyfin_data is chowned to.
+# Pinned to the ids that already own /tank/appdata/jellyfin_data.
 jellyfin_uid: 107
 jellyfin_gid: 110
 
-# Groups jellyfin must belong to, with their ids pinned for the same
-# reason. video/render are the GPU device nodes; jellyfin_srv is what
-# owns the media on /tank/jellyfin and is shared with samba - see
-# group_vars/samba.yml.
-
+# video/jellyfin_render: the GPU device nodes. jellyfin_srv: owns the media
+# on /tank/jellyfin, shared with samba (group_vars/samba.yml).
 jellyfin_groups:
   - { name: video, gid: 44 }
   - { name: jellyfin_render, gid: 1061 }
   - { name: jellyfin_srv, gid: 1060 }
 
 # --- Storage ---
-#
-# These are Jellyfin's own default paths, and they stay that way on
-# purpose. /tank/appdata/jellyfin_data/{data,config} is bind-mounted onto
-# them by terraform/lxc-jellyfin.tf, so the data lives on the pool while
-# the paths Jellyfin sees never change.
-#
-# Redirecting them elsewhere via /etc/default/jellyfin was tried and does
-# not work: Jellyfin writes absolute paths to its own data directory into
-# the database, so moving the directory orphaned 11,259 of 12,388 artwork
-# rows and every poster 404'd.
+# Jellyfin's own default paths, with /tank/appdata bind-mounted onto them
+# (terraform/lxc-jellyfin.tf). Don't move them: Jellyfin stores absolute
+# paths in its database.
 jellyfin_config_dir: /etc/jellyfin
 jellyfin_data_dir: /var/lib/jellyfin
 
-# Deliberately NOT on /tank: transcode scratch and logs are rebuildable,
-# write-heavy, and would put pointless churn on the spinning pool.
+# Rebuildable and write-heavy, so on the container's disk, not /tank.
 jellyfin_cache_dir: /var/cache/jellyfin
 jellyfin_log_dir: /var/log/jellyfin
 
-# Media library mount. The path matters: every library path in Jellyfin's
-# database is absolute, so changing it orphans all libraries.
+# Don't move this either: every library path in the database is absolute.
 jellyfin_media_dir: /opt/jellyfin
 
-# --- Package -------------------------------------------------------------
+# --- Package ---
 jellyfin_repo_url: https://repo.jellyfin.org/debian
 jellyfin_repo_key_url: https://repo.jellyfin.org/jellyfin_team.gpg.key
 jellyfin_repo_keyring: /etc/apt/keyrings/jellyfin.asc

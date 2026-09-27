@@ -1,27 +1,16 @@
-# Service catalog - the one place to register a service.
+# Service catalog - the one place to register a service. The port registry,
+# edge router and homepage vars are all generated from it. Fields are
+# described in docs/adding-a-service.md; in short:
 #
-# Everything the other files need to agree on about a service lives in its
-# entry here, and the vars they actually use are generated from it:
+#   port                  listening port -> service_ports.<name>
+#   host / address        inventory group it runs on, or a literal IP
+#   domains               domains it gets a hostname on
+#   subdomain             hostname, when it isn't <name>
+#   proxy / tcp           HTTP route through Caddy, or TCP forward via HAProxy
+#   homepage, container   dashboard entry, and container name for its status
+#   firewall              sources allowed to reach it (not wired up yet)
 #
-#   port       -> service_ports.<name>          (all/service_ports.yml)
-#   host       -> backend address, from the inventory group of that name
-#   address    -> literal backend address, for things not in the inventory
-#                 (use instead of `host`)
-#   domains    -> which domains in edge_router.yml serve it
-#   subdomain  -> hostname to serve it as, when it isn't <name>
-#   proxy      -> an HTTP route through Caddy (edge_services); takes
-#                 `encodings`, plus optional `transport_http` / `headers`,
-#                 passed through to the reverse_proxy entry as-is
-#   tcp        -> true for a raw TCP forward through HAProxy instead
-#                 (edge_tcp_services), on the same port at both ends
-#   homepage   -> display name, icon, description and group on the
-#                 dashboard (docker_apps.yml)
-#   container  -> container name on docker_apps, for the dashboard's
-#                 status dot
-#   firewall   -> NOT WIRED UP YET: firewall.yml is still on the host
-#                 branch. Sources allowed to reach `port` on its host.
-#
-# Order matters: it's the order services appear on the homepage.
+# Order is the order services appear on the homepage.
 services:
 
   homebox:
@@ -39,13 +28,11 @@ services:
     domains: [milorw.me, owennwb.com]
     proxy: {encodings: [gzip, zstd]}
     homepage: {name: Sure, icon: mdi-finance, description: Finances, group: Home}
-    # Compose names it <project>-<service>-1, since sure's compose file
-    # doesn't set container_name.
+    # Compose's default <project>-<service>-1 - sure doesn't set container_name.
     container: sure-web-1
     firewall: [edge_router]
 
-  # Proxmox's web UI is HTTPS-only with a self-signed cert, so the backend
-  # connection needs TLS with verification skipped, not plain HTTP.
+  # HTTPS-only with a self-signed cert.
   proxmox:
     host: proxmox_nodes
     port: 8006
@@ -60,8 +47,7 @@ services:
     domains: [milorw.me, owennwb.com]
     proxy: {encodings: [gzip, zstd]}
     homepage: {name: Jellyfin, icon: jellyfin.png, description: Media library, group: Media}
-    # Direct LAN/tailnet access as well as via the edge router: TVs and
-    # phones talk to Jellyfin straight for local playback.
+    # Direct LAN/tailnet access too, for local playback on TVs and phones.
     firewall: [edge_router, lan_net, ts_net]
 
   ombi:
@@ -73,8 +59,7 @@ services:
     container: ombi
     firewall: [edge_router]
 
-  # Literal address: Home Assistant is a separate appliance, not a guest
-  # this repo manages.
+  # A separate appliance, not managed by this repo.
   ha:
     address: 192.168.68.2
     port: 8123
@@ -82,8 +67,7 @@ services:
     proxy: {encodings: [gzip, zstd]}
     homepage: {name: Home Assistant, icon: home-assistant.png, description: Automation, group: Home}
 
-  # Not HTTP, so HAProxy forwards it rather than Caddy. Still gets a
-  # hostname, so minecraft.<domain> resolves.
+  # Not HTTP, so forwarded by HAProxy instead of Caddy.
   minecraft:
     host: minecraft
     port: 25565
@@ -92,8 +76,7 @@ services:
     homepage: {name: Minecraft, icon: minecraft.png, description: Game server, group: Games}
     firewall: [edge_router]
 
-  # Crafty's web panel, served as mcpanel. It has its own self-signed HTTPS,
-  # and needs the original Host header passed through.
+  # Crafty's web panel. Self-signed HTTPS, and needs the original Host header.
   crafty:
     host: minecraft
     port: 8443
@@ -121,7 +104,6 @@ services:
     proxy: {encodings: [gzip, zstd]}
     firewall: [edge_router]
 
-# Port registry, generated from the entries above. Referenced by an app's
-# own deployment (compose files, lxc-jellyfin.yml, ...) as well as by the
-# edge router, so a port only ever changes in one place.
+# Port registry, generated from the entries above - reference ports as
+# service_ports.<name> everywhere.
 service_ports: "{{ dict(services.keys() | zip(services.values() | map(attribute='port'))) }}"

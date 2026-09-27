@@ -13,9 +13,8 @@ mealie_base_url: "https://mealie.milorw.me"
 
 # --- homepage ---
 homepage_title: Shonk Shack Services
-# Domain the generated service links point at. Only services present in
-# every edge_domains entry are listed, so both domains work; this just
-# picks which one the hrefs use.
+# Which domain the service links use. Only services on every domain are
+# listed, so either works.
 homepage_link_domain: milorw.me
 # Dashboard groups, in the order they should appear.
 homepage_groups:
@@ -23,10 +22,7 @@ homepage_groups:
   - Media
   - Games
   - Services
-# Display name, icon, description and group for each service, from the
-# `homepage` block of its entry in the service catalog (all/services.yml).
-# A service without one falls back to a capitalized name, "<service>.png"
-# for the icon, and the Services group.
+# Generated from the service catalog's `homepage` blocks (all/services.yml).
 homepage_service_meta: >-
   {%- set ns = namespace(out={}) -%}
   {%- for name, svc in services.items() if svc.homepage is defined -%}
@@ -48,8 +44,7 @@ homepage_widgets:
 # Bookmarks shown under the services. Empty by default, which also stops
 # homepage writing its own bookmarks.yaml full of example links.
 homepage_bookmarks: []
-# Containers on this LXC, for the status dot next to a service - from the
-# `container` field of its entry in the service catalog.
+# Generated from the service catalog's `container` fields.
 homepage_docker_containers: >-
   {%- set ns = namespace(out={}) -%}
   {%- for name, svc in services.items() if svc.container is defined -%}

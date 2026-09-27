@@ -7,22 +7,14 @@ edge_cf_tokens:
   CF_API_TOKEN_MILORW: "{{ cf_api_token_milorw }}"
   CF_API_TOKEN_OWENNWB: "{{ cf_api_token_owennwb }}"
 
-# Error-page behaviour. Every HTTP service gets a static page rendered onto
-# the edge router itself, so it's still servable when the backend host is
-# down - see docs/Ansible/edge-router.md.
-#
-# dial_timeout has to be short for that page to be any use: a powered-off
-# backend drops SYNs rather than refusing them, so without it the browser
-# hangs on the OS TCP timeout instead of showing anything.
+# --- Error pages - see docs/Ansible/edge-router.md ---
+# Short, so a powered-off backend shows the error page instead of hanging.
 edge_dial_timeout: 5s
-# The error page retries the original URL this many times, this far apart...
+# Retry the original URL this many times, this many seconds apart...
 edge_error_retry_delay: 8
 edge_error_max_attempts: 5
-# ...then hands off to the homepage after this many seconds, rather than
-# sitting on a dead page. Only applies where there's somewhere to go: on
-# the homepage's own hostname the page just stops retrying.
+# ...then hand off to the homepage after this many seconds.
 edge_error_handoff_delay: 5
-# Which service in edge_services the error page links to as an escape hatch.
 edge_homepage_service: homepage
 
 # Domains the edge router serves, and the env var its Cloudflare token is
@@ -37,9 +29,8 @@ edge_domain_settings:
 # Everything below is generated from the service catalog - register or
 # change a service there, not here.
 
-# Backend address for each catalog service: its literal `address`, or its
-# inventory group's first host, so no IP managed by this repo is written
-# down twice.
+# Backend address for each catalog service: its `address`, or the first
+# host in its `host` inventory group.
 edge_backend_addresses: >-
   {%- set ns = namespace(out={}) -%}
   {%- for name, svc in services.items() -%}
@@ -79,40 +70,17 @@ edge_tcp_services: >-
   {%- endfor -%}
   {{ ns.out }}
 
-# --- Tailscale subnet router ---
-#
-# The edge routes the LAN for the tailnet. This is what gives remote access
-# to things the reverse proxy can't carry - SMB on samba, and SSH to the
-# LXCs, none of which are tailnet members themselves.
-#
-# One /32 per LXC rather than the whole LAN. Resolved from inventory, so a
-# new container doesn't need its IP written down here a second time.
-#
-# Narrow on purpose:
-#   - The only things that genuinely need this are SMB on samba and SSH to
-#     the containers. Every HTTP service goes through Caddy, and minecraft's
-#     game port through HAProxy, both on the edge's own tailnet address.
-#   - It deliberately excludes the Proxmox host (.90). The host is a tailnet
-#     member in its own right, so routing its LAN address through here makes
-#     the return path asymmetric. Left out, that address stays on the LAN
-#     where it works, and the host's own 100.x address remains the break-glass path.
-#
-# NOTE: changing this set means the new routes start out UNAPPROVED. They
-# carry no traffic until approved in the tailnet admin console.
+# --- Tailscale subnet router - see docs/Ansible/edge-router.md ---
+# One /32 per LXC, for SMB and SSH. Deliberately not the whole LAN, which
+# would include the Proxmox host. New routes start out UNAPPROVED in the
+# tailnet admin console.
 edge_tailscale_advertise_routes: >-
   {{ groups['proxmox_all_lxc']
      | map('extract', hostvars, 'ansible_host')
      | map('regex_replace', '$', '/32')
      | list | sort }}
 
-# false = preserve the original 100.x source address instead of rewriting it
-# to the edge's own LAN address.
-#
-# This is what lets the firewall distinguish a tailnet user from the reverse
-# proxy: with SNAT on, every remote packet arrives looking like edge_router,
-# so ts_net rules never match and lan_net rules match things that are not on
-# the LAN at all.
-#
-# REQUIRES a return route for 100.64.0.0/10 via this container, or guests
-# reply to an address their default gateway cannot reach.
+# false keeps the real 100.x source address, so firewall rules can tell a
+# tailnet user from the reverse proxy. REQUIRES a static route for
+# 100.64.0.0/10 via this container on the LAN router.
 edge_tailscale_snat_subnet_routes: false

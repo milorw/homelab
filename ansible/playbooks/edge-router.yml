@@ -53,6 +53,84 @@
       ansible.builtin.set_fact:
         edge_tailscale_ip: "{{ tailscale_status.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
 
+    # --- Subnet router -----------------------------------------------------
+    #
+    # These were hand-set on the container and invisible to this repo, which
+    # meant nothing recorded that the edge routes the whole LAN for the
+    # tailnet - or that it rewrote the source address while doing it.
+    #
+    # snat_subnet_routes: false is the important half. With SNAT on, remote
+    # traffic reaches the LAN wearing the edge's own address, so every guest
+    # sees it as edge_router and the firewall can't tell a tailnet user from
+    # the reverse proxy. Off, the real 100.x source survives and the ts_net
+    # rules mean what they say.
+    #
+    # It requires a return route: without SNAT the guests answer 100.x, and
+    # their default gateway has no idea where that is. See
+    # docs/Ansible/edge-router.md.
+
+    # Derived from inventory, so an empty or broken lookup would silently
+    # advertise nothing and take remote SSH and SMB down with it.
+    - name: Check the advertised route list resolved
+      ansible.builtin.assert:
+        that:
+          - edge_tailscale_advertise_routes | length > 0
+          - edge_tailscale_advertise_routes | select('search', '/32$') | list | length
+            == edge_tailscale_advertise_routes | length
+        fail_msg: >-
+          edge_tailscale_advertise_routes resolved to
+          {{ edge_tailscale_advertise_routes }}, which is empty or malformed.
+          It is built from the proxmox_all_lxc inventory group - check the
+          dynamic inventory is returning containers.
+        quiet: true
+
+    - name: Read tailscale prefs
+      ansible.builtin.command: tailscale debug prefs
+      register: tailscale_prefs_raw
+      changed_when: false
+
+    - name: Parse tailscale prefs
+      ansible.builtin.set_fact:
+        tailscale_prefs: "{{ tailscale_prefs_raw.stdout | from_json }}"
+
+    # tailscale set is idempotent, but running it unconditionally would
+    # report changed every time, so compare first. NoSNAT is the inverse of
+    # the --snat-subnet-routes flag.
+    - name: Apply subnet router prefs
+      ansible.builtin.command:
+        argv:
+          - tailscale
+          - set
+          - "--advertise-routes={{ edge_tailscale_advertise_routes | join(',') }}"
+          - "--snat-subnet-routes={{ edge_tailscale_snat_subnet_routes | bool | ternary('true', 'false') }}"
+      when: >-
+        (tailscale_prefs.AdvertiseRoutes | default([]) | sort)
+          != (edge_tailscale_advertise_routes | sort)
+        or (tailscale_prefs.NoSNAT | default(false))
+             != (not (edge_tailscale_snat_subnet_routes | bool))
+      changed_when: true
+
+    - name: Confirm the prefs took
+      ansible.builtin.command: tailscale debug prefs
+      register: tailscale_prefs_after
+      changed_when: false
+
+    - name: Fail if the subnet router prefs did not apply
+      ansible.builtin.assert:
+        that:
+          - (after.AdvertiseRoutes | default([]) | sort) == (edge_tailscale_advertise_routes | sort)
+          - (after.NoSNAT | default(false)) == (not (edge_tailscale_snat_subnet_routes | bool))
+        fail_msg: >-
+          tailscale prefs did not apply. Wanted routes
+          {{ edge_tailscale_advertise_routes }} with NoSNAT
+          {{ not (edge_tailscale_snat_subnet_routes | bool) }}; got
+          {{ after.AdvertiseRoutes | default([]) }} / {{ after.NoSNAT | default(false) }}.
+          A newly advertised route also has to be approved in the tailnet
+          admin console before it carries traffic.
+        quiet: true
+      vars:
+        after: "{{ tailscale_prefs_after.stdout | from_json }}"
+
     - name: Create config/data directories
       ansible.builtin.file:
         path: "{{ item.path }}"

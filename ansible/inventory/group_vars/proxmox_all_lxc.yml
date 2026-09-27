@@ -3,3 +3,13 @@ ansible_user: root
 ansible_ssh_private_key_file: ~/.ssh/ansible_proxmox
 # SSH key is reused, so allow for changed key hosts, and don't save the known host
 ansible_ssh_common_args: '-o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
+# Root SSH policy, applied by playbooks/lxc-baseline.yml.
+#
+# prohibit-password = key-only root login, which is what every container
+# already does - but by OpenSSH default rather than by configuration.
+#
+lxc_permit_root_login: prohibit-password
+
+# Debian calls it ssh.service, with sshd.service as an alias.
+lxc_sshd_service: ssh

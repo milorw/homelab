@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+#
+# Root SSH policy, set explicitly rather than inherited.
+#
+# Every LXC here was already effectively '{{ lxc_permit_root_login }}' - but only
+# because that is OpenSSH's built-in default on Debian. A base image that shipped
+# a different default, or a package that dropped its own file in here, would change
+# the fleet's root access policy silently. Stating it means a change has to be deliberate.
+#
+# Note this is what lets Ansible work at all: group_vars/proxmox_all_lxc.yml
+# connects as root over SSH by key. Setting this to 'no' locks Ansible out
+# of every container until it has its own sudo-capable account.
+PermitRootLogin {{ lxc_permit_root_login }}

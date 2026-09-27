@@ -10,6 +10,10 @@
     edge_config_dir: "{{ edge_root }}/config"
     edge_data_dir: "{{ edge_root }}/data"
     edge_caddy_state_dir: "{{ edge_root }}/caddy-state"
+    edge_errors_dir: "{{ edge_config_dir }}/errors"
+    # Where that same directory lands inside the caddy container, since
+    # config/ is mounted at /etc/caddy - this is what the Caddyfile refers to
+    edge_errors_container_dir: /etc/caddy/errors
 
   tasks:
     - name: Set up Docker
@@ -60,6 +64,7 @@
         # non-root user. Nothing secret lives here; the Cloudflare tokens are in
         # {{ edge_root }}/.env (0600).
         - { path: "{{ edge_config_dir }}", mode: "0755" }
+        - { path: "{{ edge_errors_dir }}", mode: "0755" }
         # data holds Caddy's certificate private keys - keep it tight
         - { path: "{{ edge_data_dir }}", mode: "0750" }
         - { path: "{{ edge_caddy_state_dir }}", mode: "0750" }
@@ -81,6 +86,22 @@
         mode: "0644"
       # No notify - the unconditional reload after the stack comes up covers
       # this, so a config that gets rendered but never loaded can't happen.
+
+    # No notify: Caddy reads these off disk per request, so a changed page is
+    # live immediately - there's no loaded copy to invalidate.
+    - name: Render error pages
+      ansible.builtin.template:
+        src: edge_router/error.html.j2
+        dest: "{{ edge_errors_dir }}/{{ item }}.html"
+        mode: "0644"
+      loop:
+        # unreachable - Caddy couldn't reach the backend at all
+        # starting    - backend answered 502/503/504 itself, i.e. it's up but
+        #               not serving yet (usually waiting on its database)
+        - unreachable
+        - starting
+      vars:
+        edge_error_mode: "{{ item }}"
 
     - name: Render haproxy.cfg
       ansible.builtin.template:

@@ -27,6 +27,7 @@ edge_domains:
       - minecraft
       - mcpanel
       - mealie
+      - homepage
 
   owennwb.com:
     cf_env_name: CF_API_TOKEN_OWENNWB
@@ -38,6 +39,7 @@ edge_domains:
       - ha
       - minecraft
       - mealie
+      - homepage
 
 edge_services:
   homebox:
@@ -78,6 +80,12 @@ edge_services:
     reverse_proxy:
       - address: "{{ docker_apps_ip }}"
         port: "{{ service_ports.mealie }}"
+
+  homepage:
+    encodings: [gzip, zstd]
+    reverse_proxy:
+      - address: "{{ docker_apps_ip }}"
+        port: "{{ service_ports.homepage }}"
 
   # Literal: Home Assistant is a separate appliance, not a guest this
   # repo manages.

@@ -19,6 +19,7 @@
         - ombi
         - sure
         - mealie
+        - homepage
 
     - name: Render homebox compose file
       ansible.builtin.template:
@@ -126,6 +127,47 @@
         project_src: "{{ apps_root }}/mealie"
         state: present
 
+    - name: Render homepage compose file
+      ansible.builtin.template:
+        src: apps/homepage.compose.yaml.j2
+        dest: "{{ apps_root }}/homepage/compose.yaml"
+        mode: "0644"
+      notify: Recreate homepage
+
+    - name: Create homepage config directory
+      ansible.builtin.file:
+        path: "{{ apps_root }}/homepage/config"
+        state: directory
+        mode: "0750"
+
+    - name: Render homepage config files
+      ansible.builtin.template:
+        src: "apps/homepage/{{ item }}.j2"
+        dest: "{{ apps_root }}/homepage/config/{{ item }}"
+        mode: "0644"
+      loop:
+        - settings.yaml
+        - widgets.yaml
+        - docker.yaml
+        - bookmarks.yaml
+      notify: Recreate homepage
+
+    # Generated from the edge router's edge_domains, so a service only has
+    # to be added there. Kept out of the loop above because widget API
+    # keys are rendered into it.
+    - name: Render homepage services file
+      ansible.builtin.template:
+        src: apps/homepage/services.yaml.j2
+        dest: "{{ apps_root }}/homepage/config/services.yaml"
+        mode: "0640"
+      no_log: true
+      notify: Recreate homepage
+
+    - name: Bring up homepage
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/homepage"
+        state: present
+
   handlers:
     - name: Recreate homebox
       community.docker.docker_compose_v2:
@@ -148,5 +190,11 @@
     - name: Recreate mealie
       community.docker.docker_compose_v2:
         project_src: "{{ apps_root }}/mealie"
+        state: present
+        recreate: always
+
+    - name: Recreate homepage
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/homepage"
         state: present
         recreate: always

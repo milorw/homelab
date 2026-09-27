@@ -11,8 +11,55 @@ sure_ai_uri_base: "https://api.openai.com/v1/"
 # --- mealie ---
 mealie_base_url: "https://mealie.milorw.me"
 
+# --- homepage ---
+homepage_title: Shonk Shack Services
+# Domain the generated service links point at. Only services present in
+# every edge_domains entry are listed, so both domains work; this just
+# picks which one the hrefs use.
+homepage_link_domain: milorw.me
+# Dashboard groups, in the order they should appear.
+homepage_groups:
+  - Home
+  - Media
+  - Games
+  - Services
+# Optional per-service display overrides. Anything left out falls back to
+# a capitalized name, "<service>.png" for the icon, and the Services group.
+homepage_service_meta:
+  homebox: {name: Homebox, icon: homebox.png, description: Inventory, group: Home}
+  ha: {name: Home Assistant, icon: home-assistant.png, description: Automation, group: Home}
+  mealie: {name: Mealie, icon: mealie.png, description: Recipes, group: Home}
+  sure: {name: Sure, icon: mdi-finance, description: Finances, group: Home}
+  jellyfin: {name: Jellyfin, icon: jellyfin.png, description: Media library, group: Media}
+  ombi: {name: Ombi, icon: ombi.png, description: Media requests, group: Media}
+  minecraft: {name: Minecraft, icon: minecraft.png, description: Game server, group: Games}
+# A service listed here is rendered as a widget instead of a plain link.
+# Widgets needing an API key should read it from a vault-backed var.
+homepage_widgets:
+  minecraft:
+    type: minecraft
+    url: "udp://{{ hostvars[groups['minecraft'][0]].ansible_host }}:{{ service_ports.minecraft }}"
+  ombi:
+    type: ombi
+    # Straight to the container on this LXC, so the widget doesn't depend
+    # on the edge router or public DNS being reachable.
+    url: "http://{{ ansible_host }}:{{ service_ports.ombi }}"
+    key: "{{ ombi_api_key }}"
+# Bookmarks shown under the services. Empty by default, which also stops
+# homepage writing its own bookmarks.yaml full of example links.
+homepage_bookmarks: []
+# Containers on this LXC, for the status dot next to a service. Compose
+# names these <project>-<service>-1 unless the compose file sets
+# container_name, which is why sure's differs.
+homepage_docker_containers:
+  homebox: homebox
+  ombi: ombi
+  sure: sure-web-1
+  mealie: mealie
+
 # Secrets, pulled from vault.
 homebox_api_key_pepper: "{{ vault_homebox_api_key_pepper }}"
 sure_postgres_password: "{{ vault_sure_postgres_password }}"
 sure_secret_key_base: "{{ vault_sure_secret_key_base }}"
 sure_ai_access_token: "{{ vault_sure_ai_access_token }}"
+ombi_api_key: "{{ vault_ombi_api_key }}"

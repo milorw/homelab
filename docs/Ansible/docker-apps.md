@@ -15,7 +15,7 @@ ansible-playbook playbooks/docker-apps.yml
 | mealie | Recipes | 9925 | `/srv/appdata/mealie_data` |
 | homepage | Dashboard of every service | 3010 | none - config is fully rendered by Ansible |
 
-Ports come from `group_vars/all/service_ports.yml`, shared with the edge router. `/srv/appdata` is `tank/appdata` on the host, so app data survives an LXC rebuild.
+Ports come from each app's entry in the service catalog (`group_vars/all/services.yml`, see [ADR 0021](../adr/0021-service-catalog.md)), and templates reference them as `service_ports.<app>`. `/srv/appdata` is `tank/appdata` on the host, so app data survives an LXC rebuild.
 
 ### Layout
 
@@ -43,14 +43,14 @@ Any change to an app's compose file or `.env` triggers a `Recreate <app>` handle
 
 ### homepage
 
-The service list is generated from the edge router's config, not maintained by hand - see [ADR 0014](../adr/0014-homepage-generated-from-edge-router.md).
+The service list is generated from the service catalog (`group_vars/all/services.yml`), not maintained by hand - see [ADR 0014](../adr/0014-homepage-generated-from-edge-router.md) and [ADR 0021](../adr/0021-service-catalog.md).
 
-- **Which services appear:** every service listed under **every** domain in `edge_domains` (so each link works on both domains), except homepage itself. Links use `homepage_link_domain`.
-- **How they look:** `homepage_service_meta` optionally sets each service's name, icon, description and group. Without an entry, a service gets its capitalized name, `<service>.png` as the icon, and the `Services` group. Groups appear in `homepage_groups` order.
+- **Which services appear:** every catalog service whose `domains` include **every** domain the edge router serves (so each link works on both domains), except homepage itself, in catalog order. Links use `homepage_link_domain`.
+- **How they look:** a catalog entry's `homepage` block optionally sets its name, icon, description and group (collected into `homepage_service_meta`). Without one, a service gets its capitalized name, `<service>.png` as the icon, and the `Services` group. Groups appear in `homepage_groups` order.
 - **Widgets:** a service in `homepage_widgets` shows that widget instead of a link. Currently minecraft (server status) and ombi (request counts, using `vault_ombi_api_key`). Because the API key ends up in `services.yaml`, that file is `0640` and its task is `no_log`.
-- **Container status:** `homepage_docker_containers` maps a service to its container name on this LXC, for the status dot. homepage reads the Docker socket read-only. Compose names containers `<project>-<service>-1` unless the compose file sets `container_name`, which is why sure's is `sure-web-1`.
+- **Container status:** a catalog entry's `container` field names its container on this LXC, for the status dot (collected into `homepage_docker_containers`). homepage reads the Docker socket read-only. Compose names containers `<project>-<service>-1` unless the compose file sets `container_name`, which is why sure's is `sure-web-1`.
 - **Bookmarks:** `homepage_bookmarks` is empty, which also stops homepage filling `bookmarks.yaml` with example links.
 
 `HOMEPAGE_ALLOWED_HOSTS` is also generated: `homepage.<domain>` for each domain that serves it, plus the LXC's own `IP:port`.
 
-Because the service list reads the edge router's vars, run `edge-router.yml` first when adding a service, then `docker-apps.yml`.
+When adding a service, run `edge-router.yml` before `docker-apps.yml`, so its hostname works before the homepage links to it.

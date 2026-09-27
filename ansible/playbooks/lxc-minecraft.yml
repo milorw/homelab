@@ -1,0 +1,90 @@
+- name: Configure minecraft LXC (Crafty Controller)
+  hosts: minecraft
+  gather_facts: false
+
+  vars:
+    # Two persistent bind mounts (see terraform/lxc-minecraft.tf):
+    #   mc_dir      - SSD host path, for world data only. The SSD is the
+    #                 host's boot drive, so nothing else goes here.
+    #   appdata_dir - bulk HDD pool, for everything that just needs to
+    #                 persist rather than be fast.
+    # Crafty separates cleanly along that line: world data is entirely
+    # under /crafty/servers, and its config/logs/import/backups are
+    # independent mounts.
+    mc_dir: /srv/minecraft
+    appdata_dir: /srv/appdata
+
+    crafty_root: "{{ appdata_dir }}/crafty"
+    crafty_servers_dir: "{{ mc_dir }}/servers"
+    crafty_backup_dir: "{{ crafty_root }}/backups"
+
+    java_major: 25
+    java_home: "/usr/lib/jvm/java-{{ java_major }}-openjdk-amd64"
+
+    paper_version: "26.2"
+    paper_build: 120
+    # Kept below the LXC's 6144 MB limit (terraform/lxc-minecraft.tf) - the
+    # JVM needs headroom beyond the heap for metaspace/GC/direct buffers,
+    # and Crafty plus the Docker daemon also live in that budget.
+    heap: "4G"
+
+  tasks:
+    - name: Install Java Runtime
+      ansible.builtin.apt:
+        name: "openjdk-{{ java_major }}-jre-headless"
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Assert the JVM we pinned actually exists
+      ansible.builtin.stat:
+        path: "{{ java_home }}/bin/java"
+      register: java_bin
+      failed_when: not java_bin.stat.exists
+
+    - name: Set up Docker
+      ansible.builtin.include_tasks: tasks/docker.yml
+
+    - name: Create Crafty directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        # HDD - persist only
+        - "{{ crafty_root }}/config"
+        - "{{ crafty_root }}/logs"
+        - "{{ crafty_root }}/import"
+        - "{{ crafty_backup_dir }}"
+        # SSD - world data, wants the speed
+        - "{{ crafty_servers_dir }}"
+
+    - name: Deploy Crafty compose file
+      ansible.builtin.template:
+        src: apps/crafty.compose.yaml.j2
+        dest: "{{ crafty_root }}/compose.yaml"
+        mode: "0644"
+      notify: Recreate crafty
+
+    - name: Bring up Crafty
+      community.docker.docker_compose_v2:
+        project_src: "{{ crafty_root }}"
+        state: present
+
+    - name: Next steps
+      ansible.builtin.debug:
+        msg: >-
+          Crafty is up at https://{{ ansible_host }}:{{ service_ports.crafty }}.
+          First run: create the admin account (credentials are generated in
+          {{ crafty_root }}/config/default-creds.txt), then create a Paper
+          server - version {{ paper_version }}, build {{ paper_build }},
+          port {{ service_ports.minecraft }}, heap {{ heap }}, Java Path
+          {{ java_home }}/bin/java (bind-mounted from the host; Crafty only
+          bundles Java 8/11/17 itself).
+
+  handlers:
+    - name: Recreate crafty
+      community.docker.docker_compose_v2:
+        project_src: "{{ crafty_root }}"
+        state: present
+        recreate: always

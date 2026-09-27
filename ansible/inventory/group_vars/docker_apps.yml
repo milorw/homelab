@@ -23,16 +23,16 @@ homepage_groups:
   - Media
   - Games
   - Services
-# Optional per-service display overrides. Anything left out falls back to
-# a capitalized name, "<service>.png" for the icon, and the Services group.
-homepage_service_meta:
-  homebox: {name: Homebox, icon: homebox.png, description: Inventory, group: Home}
-  ha: {name: Home Assistant, icon: home-assistant.png, description: Automation, group: Home}
-  mealie: {name: Mealie, icon: mealie.png, description: Recipes, group: Home}
-  sure: {name: Sure, icon: mdi-finance, description: Finances, group: Home}
-  jellyfin: {name: Jellyfin, icon: jellyfin.png, description: Media library, group: Media}
-  ombi: {name: Ombi, icon: ombi.png, description: Media requests, group: Media}
-  minecraft: {name: Minecraft, icon: minecraft.png, description: Game server, group: Games}
+# Display name, icon, description and group for each service, from the
+# `homepage` block of its entry in the service catalog (all/services.yml).
+# A service without one falls back to a capitalized name, "<service>.png"
+# for the icon, and the Services group.
+homepage_service_meta: >-
+  {%- set ns = namespace(out={}) -%}
+  {%- for name, svc in services.items() if svc.homepage is defined -%}
+  {%-   set ns.out = ns.out | combine({svc.subdomain | default(name): svc.homepage}) -%}
+  {%- endfor -%}
+  {{ ns.out }}
 # A service listed here is rendered as a widget instead of a plain link.
 # Widgets needing an API key should read it from a vault-backed var.
 homepage_widgets:
@@ -48,14 +48,14 @@ homepage_widgets:
 # Bookmarks shown under the services. Empty by default, which also stops
 # homepage writing its own bookmarks.yaml full of example links.
 homepage_bookmarks: []
-# Containers on this LXC, for the status dot next to a service. Compose
-# names these <project>-<service>-1 unless the compose file sets
-# container_name, which is why sure's differs.
-homepage_docker_containers:
-  homebox: homebox
-  ombi: ombi
-  sure: sure-web-1
-  mealie: mealie
+# Containers on this LXC, for the status dot next to a service - from the
+# `container` field of its entry in the service catalog.
+homepage_docker_containers: >-
+  {%- set ns = namespace(out={}) -%}
+  {%- for name, svc in services.items() if svc.container is defined -%}
+  {%-   set ns.out = ns.out | combine({svc.subdomain | default(name): svc.container}) -%}
+  {%- endfor -%}
+  {{ ns.out }}
 
 # Secrets, pulled from vault.
 homebox_api_key_pepper: "{{ vault_homebox_api_key_pepper }}"

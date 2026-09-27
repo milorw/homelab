@@ -7,13 +7,6 @@ edge_cf_tokens:
   CF_API_TOKEN_MILORW: "{{ cf_api_token_milorw }}"
   CF_API_TOKEN_OWENNWB: "{{ cf_api_token_owennwb }}"
 
-# Backend addresses resolved live from inventory, so no IP managed by this
-# repo is duplicated here.
-docker_apps_ip: "{{ hostvars[groups['docker_apps'][0]].ansible_host }}"
-jellyfin_ip: "{{ hostvars[groups['jellyfin'][0]].ansible_host }}"
-minecraft_ip: "{{ hostvars[groups['minecraft'][0]].ansible_host }}"
-proxmox_ip: "{{ hostvars[groups['proxmox_nodes'][0]].ansible_host }}"
-
 # Error-page behaviour. Every HTTP service gets a static page rendered onto
 # the edge router itself, so it's still servable when the backend host is
 # down - see docs/Ansible/edge-router.md.
@@ -32,104 +25,59 @@ edge_error_handoff_delay: 5
 # Which service in edge_services the error page links to as an escape hatch.
 edge_homepage_service: homepage
 
-edge_domains:
+# Domains the edge router serves, and the env var its Cloudflare token is
+# passed in. Which services each one serves comes from the `domains` list
+# on each entry in the service catalog (all/services.yml).
+edge_domain_settings:
   milorw.me:
     cf_env_name: CF_API_TOKEN_MILORW
-    services:
-      - homebox
-      - sure
-      - proxmox
-      - jellyfin
-      - ombi
-      - ha
-      - minecraft
-      - mcpanel
-      - mealie
-      - homepage
-
   owennwb.com:
     cf_env_name: CF_API_TOKEN_OWENNWB
-    services:
-      - homebox
-      - sure
-      - jellyfin
-      - ombi
-      - ha
-      - minecraft
-      - mealie
-      - homepage
 
-edge_services:
-  homebox:
-    encodings: [gzip, zstd]
-    reverse_proxy:
-      - address: "{{ docker_apps_ip }}"
-        port: "{{ service_ports.homebox }}"
+# Everything below is generated from the service catalog - register or
+# change a service there, not here.
 
-  sure:
-    encodings: [gzip, zstd]
-    reverse_proxy:
-      - address: "{{ docker_apps_ip }}"
-        port: "{{ service_ports.sure }}"
+# Backend address for each catalog service: its literal `address`, or its
+# inventory group's first host, so no IP managed by this repo is written
+# down twice.
+edge_backend_addresses: >-
+  {%- set ns = namespace(out={}) -%}
+  {%- for name, svc in services.items() -%}
+  {%-   set address = svc.address if svc.address is defined else hostvars[groups[svc.host][0]].ansible_host -%}
+  {%-   set ns.out = ns.out | combine({name: address}) -%}
+  {%- endfor -%}
+  {{ ns.out }}
 
-  # Proxmox's web UI is HTTPS-only with a self-signed cert, so the backend
-  # connection needs TLS with verification skipped, not plain HTTP.
-  proxmox:
-    encodings: [gzip, zstd]
-    reverse_proxy:
-      - address: "{{ proxmox_ip }}"
-        port: 8006
-        transport_http: [tls_insecure_skip_verify]
+# Each domain with the hostnames it serves, in catalog order.
+edge_domains: >-
+  {%- set ns = namespace(out={}) -%}
+  {%- for domain, attrs in edge_domain_settings.items() -%}
+  {%-   set names = [] -%}
+  {%-   for name, svc in services.items() if domain in svc.domains | default([]) -%}
+  {%-     set _ = names.append(svc.subdomain | default(name)) -%}
+  {%-   endfor -%}
+  {%-   set ns.out = ns.out | combine({domain: attrs | combine({'services': names})}) -%}
+  {%- endfor -%}
+  {{ ns.out }}
 
-  jellyfin:
-    encodings: [gzip, zstd]
-    reverse_proxy:
-      - address: "{{ jellyfin_ip }}"
-        port: "{{ service_ports.jellyfin }}"
+# HTTP services for Caddy: one per catalog service with a `proxy` block.
+edge_services: >-
+  {%- set ns = namespace(out={}) -%}
+  {%- for name, svc in services.items() if svc.proxy is defined -%}
+  {%-   set backend = {'address': edge_backend_addresses[name], 'port': svc.port}
+                     | combine(svc.proxy | dict2items | rejectattr('key', 'eq', 'encodings') | items2dict) -%}
+  {%-   set ns.out = ns.out | combine({svc.subdomain | default(name): {'encodings': svc.proxy.encodings, 'reverse_proxy': [backend]}}) -%}
+  {%- endfor -%}
+  {{ ns.out }}
 
-  ombi:
-    encodings: [gzip, zstd]
-    reverse_proxy:
-      - address: "{{ docker_apps_ip }}"
-        port: "{{ service_ports.ombi }}"
-
-  mealie:
-    encodings: [gzip, zstd]
-    reverse_proxy:
-      - address: "{{ docker_apps_ip }}"
-        port: "{{ service_ports.mealie }}"
-
-  homepage:
-    encodings: [gzip, zstd]
-    reverse_proxy:
-      - address: "{{ docker_apps_ip }}"
-        port: "{{ service_ports.homepage }}"
-
-  # Literal: Home Assistant is a separate appliance, not a guest this
-  # repo manages.
-  ha:
-    encodings: [gzip, zstd]
-    reverse_proxy:
-      - address: 192.168.68.2
-        port: 8123
-
-  mcpanel:
-    encodings: [gzip, zstd]
-    reverse_proxy:
-      - address: "{{ minecraft_ip }}"
-        port: "{{ service_ports.crafty }}"
-        transport_http: [tls_insecure_skip_verify]
-        headers:
-          Host: host
-
-# Raw-TCP services, forwarded by HAProxy rather than Caddy's HTTP-only
-# reverse_proxy. Still get a CoreDNS hostname so minecraft.domainname
-# resolves, just not an HTTP route through Caddy.
-edge_tcp_services:
-  minecraft:
-    listen_port: "{{ service_ports.minecraft }}"
-    backend_port: "{{ service_ports.minecraft }}"
-    address: "{{ minecraft_ip }}"
+# Raw-TCP services for HAProxy: one per catalog service with `tcp: true`.
+# They still get a CoreDNS hostname, just not an HTTP route through Caddy.
+edge_tcp_services: >-
+  {%- set ns = namespace(out={}) -%}
+  {%- for name, svc in services.items() if svc.tcp | default(false) -%}
+  {%-   set ns.out = ns.out | combine({svc.subdomain | default(name): {'listen_port': svc.port, 'backend_port': svc.port, 'address': edge_backend_addresses[name]}}) -%}
+  {%- endfor -%}
+  {{ ns.out }}
 
 # --- Tailscale subnet router ---
 #
@@ -137,9 +85,8 @@ edge_tcp_services:
 # to things the reverse proxy can't carry - SMB on samba, and SSH to the
 # LXCs, none of which are tailnet members themselves.
 #
-# One /32 per LXC rather than the whole LAN. Resolved from inventory for
-# the same reason the backend addresses above are - a new container should
-# not need its IP written down here a second time.
+# One /32 per LXC rather than the whole LAN. Resolved from inventory, so a
+# new container doesn't need its IP written down here a second time.
 #
 # Narrow on purpose:
 #   - The only things that genuinely need this are SMB on samba and SSH to

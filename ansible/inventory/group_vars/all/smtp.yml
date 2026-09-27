@@ -1,0 +1,11 @@
+# Shared outbound mail relay (Azure, STARTTLS on 587).
+# Lives in group_vars/all so any app on any host that sends email can
+# reference the same settings instead of carrying its own copy.
+smtp_host: smtp.azurecomm.net
+smtp_port: 587
+smtp_auth_strategy: TLS
+
+# Secrets, pulled from vault.
+smtp_from_email: "{{ vault_smtp_from_email }}"
+smtp_user: "{{ vault_smtp_user }}"
+smtp_password: "{{ vault_smtp_password }}"

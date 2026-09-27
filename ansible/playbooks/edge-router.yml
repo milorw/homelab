@@ -35,6 +35,8 @@
       register: tailscale_status_raw
       changed_when: false
       failed_when: false # tailscale exits 1 when not connected
+      # Read-only, so it runs under --check too - later tasks need its output.
+      check_mode: false
 
     - name: Parse tailscale status
       ansible.builtin.set_fact:
@@ -88,6 +90,8 @@
       ansible.builtin.command: tailscale debug prefs
       register: tailscale_prefs_raw
       changed_when: false
+      # Read-only, so it runs under --check too - later tasks need its output.
+      check_mode: false
 
     - name: Parse tailscale prefs
       ansible.builtin.set_fact:
@@ -114,6 +118,8 @@
       ansible.builtin.command: tailscale debug prefs
       register: tailscale_prefs_after
       changed_when: false
+      # Under --check nothing was applied, so there's nothing to confirm.
+      when: not ansible_check_mode
 
     - name: Fail if the subnet router prefs did not apply
       ansible.builtin.assert:
@@ -128,6 +134,7 @@
           A newly advertised route also has to be approved in the tailnet
           admin console before it carries traffic.
         quiet: true
+      when: not ansible_check_mode
       vars:
         after: "{{ tailscale_prefs_after.stdout | from_json }}"
 

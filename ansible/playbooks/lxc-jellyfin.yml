@@ -141,6 +141,8 @@
       register: jellyfin_mounts
       changed_when: false
       failed_when: false
+      # Read-only, so it runs under --check too - later tasks need its output.
+      check_mode: false
       loop:
         - "{{ jellyfin_data_dir }}"
         - "{{ jellyfin_config_dir }}"

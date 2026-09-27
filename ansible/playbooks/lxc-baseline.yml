@@ -32,6 +32,8 @@
       register: sshd_test
       changed_when: false
       failed_when: false
+      # Read-only, so it runs under --check too - later tasks need its output.
+      check_mode: false
 
     - name: Remove the drop-in if it broke the config
       ansible.builtin.file:
@@ -62,6 +64,8 @@
       ansible.builtin.command: sshd -T
       register: sshd_effective
       changed_when: false
+      # Under --check the drop-in wasn't written, so there's nothing to read back.
+      when: not ansible_check_mode
 
     # sshd -T normalises to the older spelling, so compare against both.
     - name: Check the effective policy matches what we asked for
@@ -73,6 +77,7 @@
           '{{ lxc_permit_root_login }}'. Something later in the include order
           is overriding /etc/ssh/sshd_config.d/10-root-login.conf.
         success_msg: "PermitRootLogin is {{ effective }}"
+      when: not ansible_check_mode
       vars:
         effective: >-
           {{ sshd_effective.stdout_lines

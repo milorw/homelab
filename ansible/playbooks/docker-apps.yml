@@ -87,6 +87,8 @@
       changed_when: false
       failed_when: false
       no_log: true
+      # Read-only, so it runs under --check too - later tasks need its output.
+      check_mode: false
 
     - name: Reconcile sure's database role with the vault
       community.docker.docker_container_exec:

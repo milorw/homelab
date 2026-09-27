@@ -21,6 +21,8 @@
   register: compose_version
   changed_when: false
   failed_when: false
+  # Read-only, so it runs under --check too - the next task needs its output.
+  check_mode: false
 
 - name: Fail if Docker Compose v2 is missing
   ansible.builtin.fail:

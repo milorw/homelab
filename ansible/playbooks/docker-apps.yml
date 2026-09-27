@@ -1,5 +1,5 @@
 - name: Configure docker apps LXC
-  hosts: apps
+  hosts: docker_apps
   gather_facts: true
 
   vars:

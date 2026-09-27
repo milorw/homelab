@@ -22,7 +22,7 @@ resource "proxmox_virtual_environment_container" "docker_apps" {
   }
 
   initialization {
-    hostname = "apps"
+    hostname = "docker-apps"
 
     ip_config {
       ipv4 {

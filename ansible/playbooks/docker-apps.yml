@@ -18,6 +18,7 @@
         - homebox
         - ombi
         - sure
+        - mealie
 
     - name: Render homebox compose file
       ansible.builtin.template:
@@ -70,6 +71,36 @@
         project_src: "{{ apps_root }}/sure"
         state: present
 
+    - name: Render mealie compose file
+      ansible.builtin.template:
+        src: apps/mealie.compose.yaml.j2
+        dest: "{{ apps_root }}/mealie/compose.yaml"
+        mode: "0644"
+      notify: Recreate mealie
+
+    - name: Render mealie .env
+      ansible.builtin.template:
+        src: apps/mealie.env.j2
+        dest: "{{ apps_root }}/mealie/.env"
+        mode: "0600"
+      no_log: true
+      notify: Recreate mealie
+
+    # Custom AI prompts, forked from Mealie v3.27.0 to pull ingredient lines
+    # out of steps and combine duplicate ingredients. A custom file replaces
+    # the built-in one entirely.
+    - name: Deploy mealie custom AI prompts
+      ansible.builtin.copy:
+        src: apps/mealie/prompts/
+        dest: "{{ apps_root }}/mealie/prompts/"
+        mode: "0644"
+        directory_mode: "0755"
+
+    - name: Bring up mealie
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/mealie"
+        state: present
+
   handlers:
     - name: Recreate homebox
       community.docker.docker_compose_v2:
@@ -86,5 +117,11 @@
     - name: Recreate sure
       community.docker.docker_compose_v2:
         project_src: "{{ apps_root }}/sure"
+        state: present
+        recreate: always
+
+    - name: Recreate mealie
+      community.docker.docker_compose_v2:
+        project_src: "{{ apps_root }}/mealie"
         state: present
         recreate: always

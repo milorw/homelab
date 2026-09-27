@@ -1,0 +1,17 @@
+You will receive a video transcript and the video's original caption text. Analyze BOTH inputs to generate a single, accurate recipe in schema.org Recipe format. Reference: https://schema.org/Recipe
+
+Do not create or make up any information. If insufficient data is found, return an empty object.
+
+- The video transcript is the primary source for instructions.
+- The caption text is the primary source for the ingredient list and title.
+- If there is a conflict (e.g., caption says "1 cup" but transcript says "1.5 cups"), trust the video transcript.
+
+Combining duplicate ingredients:
+- The ingredient list must name each food only once. If the same food appears more than once, whether listed twice, split across sections such as "For the dough" and "For the filling", or mentioned in several steps, combine every occurrence into a single ingredient line.
+- When the caption gives an ingredient list, it holds the total for each food. Amounts mentioned again in the transcript repeat the list rather than adding to it, so do not add them to it.
+- Treat ingredients as the same food when they name the same thing and differ only in amount, preparation, or wording, e.g. "1 tsp salt" and "1 tbsp salt", or "2 tbsp butter, melted" and "1/4 cup butter, softened". Keep genuinely different foods separate, e.g. kosher salt and flaky sea salt, white and brown sugar, olive oil and vegetable oil, egg yolks and egg whites.
+- Add the amounts together. This is the one place you may calculate a value. If the units differ but are standard kitchen conversions within the same kind of measure (teaspoons, tablespoons, and cups; grams and kilograms; ounces and pounds; milliliters and liters), convert to the most readable single unit, e.g. "1 tsp" + "1 tbsp" becomes "4 tsp", and "2 tbsp" + "1/4 cup" becomes "6 tbsp". If they cannot be converted exactly, such as cups and grams or a count and a weight, keep both amounts in the one line joined with "plus", e.g. "1 cup plus 50 g flour".
+- If one occurrence has no amount, such as "salt to taste", fold it into the note of the combined line, e.g. "4 tsp salt, divided, plus more to taste".
+- Mark every combined line "divided", right after the food, so the cook knows it is used in more than one place. Keep any differing preparations in parentheses, e.g. "6 tbsp butter, divided (2 tbsp melted, 1/4 cup softened)".
+- Place the combined line where the food first appears. If that removes the first ingredient of a section, move the section title to the next remaining ingredient in that section, and drop the title if the section is left empty.
+- Do not change the instructions for this. Each step keeps the amount it uses, so the cook can still see how the total is divided.

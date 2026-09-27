@@ -11,25 +11,61 @@
 ({{ service }}) {
   bind {{ edge_tailscale_ip }} {{ ansible_host }}
   encode {{ attrs.encodings | join(' ') }}
+  # Errors only - successful requests aren't logged, so this stays quiet
+  # until something actually fails.
+  log {
+    level ERROR
+  }
 {% for rp in attrs.reverse_proxy %}
 {% set prefix = (rp.path ~ ' ') if rp.path is defined else '' %}
-{% if rp.headers is defined or rp.transport_http is defined %}
   reverse_proxy {{ prefix }}{{ rp.address }}:{{ rp.port }} {
 {% if rp.headers is defined %}
 {% for hdr, val in rp.headers.items() %}
     header_up {{ hdr }} {{ '{host}' if val == 'host' else ('{upstream_hostport}' if val == 'upstream' else val) }}
 {% endfor %}
 {% endif %}
-{% if rp.transport_http is defined %}
     transport http {
-      {{ rp.transport_http }}
-    }
-{% endif %}
-  }
-{% else %}
-  reverse_proxy {{ prefix }}{{ rp.address }}:{{ rp.port }}
-{% endif %}
+      # Without this, a backend whose host is powered off drops our SYNs and
+      # the browser hangs on the OS TCP timeout (minutes) instead of getting
+      # the error page below.
+      dial_timeout {{ edge_dial_timeout }}
+{% for directive in rp.transport_http | default([]) %}
+      {{ directive }}
 {% endfor %}
+    }
+    # A gateway 5xx from the app itself (as opposed to Caddy failing to
+    # reach it) means it's up but not serving yet - typically still waiting
+    # on its database. 500 is deliberately not intercepted: that's an
+    # application error on a real response, and replacing it with HTML would
+    # break API clients.
+    @backend_unready status 502 503 504
+    handle_response @backend_unready {
+      header Cache-Control "no-store"
+      root * {{ edge_errors_container_dir }}
+      rewrite * /starting.html
+      file_server {
+        status {rp.status_code}
+      }
+    }
+  }
+{% endfor %}
+  # Errors Caddy generates itself.
+  #
+  # This deliberately doesn't try to tell "stopped" from "still booting":
+  # published container ports are DNAT'd straight to the container, so a
+  # container whose app hasn't bound its port yet refuses the connection
+  # exactly like a stopped stack does. (The accept-then-drop behaviour that
+  # would distinguish them only happens on the docker host's own loopback,
+  # via docker-proxy - not on the path Caddy takes.) The page covers both
+  # and keeps retrying until one of them resolves.
+  handle_errors 502 503 504 {
+    header Cache-Control "no-store"
+    root * {{ edge_errors_container_dir }}
+    rewrite * /unreachable.html
+    file_server {
+      status {err.status_code}
+    }
+  }
 }
 {% endfor %}
 {% for service, sattrs in edge_services.items() %}

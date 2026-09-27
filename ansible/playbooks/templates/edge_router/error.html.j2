@@ -1,0 +1,267 @@
+{# Managed by Ansible (edge-router.yml). Do not edit by hand.
+
+   Rendered once per mode by the "Render error pages" task:
+     unreachable - Caddy got no response at all. Covers stopped, restarting
+                   and still-booting alike: from the edge router those are
+                   the same connection refused, because a published port is
+                   DNAT'd to the container whether or not the app inside has
+                   bound it yet. This is the page you'll normally see.
+     starting    - the app answered with a gateway 5xx of its own, so it's
+                   definitely up but not serving. Rare here: these apps bind
+                   their port only once they're ready, so they fail the
+                   other way.
+
+   Everything is inline: this page is served precisely when the app host is
+   down, so it can't reference anything that lives over there. #}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ 'Starting up' if edge_error_mode == 'starting' else 'Not responding' }}</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f7f9;
+        --card: #ffffff;
+        --fg: #1b1f24;
+        --muted: #646d78;
+        --line: #e2e5ea;
+        --accent: {{ '#b7791f' if edge_error_mode == 'starting' else '#9b2c2c' }};
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15181c;
+          --card: #1d2126;
+          --fg: #e8eaed;
+          --muted: #98a1ac;
+          --line: #2c3238;
+          --accent: {{ '#e9b949' if edge_error_mode == 'starting' else '#f08c8c' }};
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 30rem;
+        padding: 2rem;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--card);
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--accent);
+        margin-bottom: 1.25rem;
+      }
+{% if edge_error_mode == 'starting' %}
+      .dot { animation: pulse 1.6s ease-in-out infinite; }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+      @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+{% endif %}
+      h1 { margin: 0 0 0.5rem; font-size: 1.35rem; font-weight: 600; }
+      p { margin: 0 0 1rem; color: var(--muted); }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.95em;
+        color: var(--fg);
+      }
+      .status {
+        margin: 0;
+        padding-top: 1rem;
+        border-top: 1px solid var(--line);
+        font-size: 0.9rem;
+      }
+      .actions { display: flex; gap: 0.75rem; align-items: center; margin-top: 1.25rem; }
+      button, .link {
+        font: inherit;
+        font-size: 0.9rem;
+        padding: 0.45rem 0.9rem;
+        border-radius: 7px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--fg);
+        text-decoration: none;
+        cursor: pointer;
+      }
+      button:hover, .link:hover { border-color: var(--muted); }
+      .tag {
+        margin: 1.5rem 0 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.72rem;
+        color: var(--muted);
+        opacity: 0.65;
+      }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="dot"></div>
+{% if edge_error_mode == 'starting' %}
+      <h1><code id="service">This service</code> is starting up</h1>
+      <p>
+        It's up and accepting connections, but it isn't serving requests
+        yet - it's still booting, usually waiting on its database. This
+        generally clears on its own within a minute.
+      </p>
+{% else %}
+      <h1><code id="service">This service</code> isn't responding</h1>
+      <p>
+        The edge router is up, but nothing answered at this service's
+        address - so it's stopped, restarting, or still starting up. Those
+        look identical from out here, so this page just keeps checking.
+      </p>
+{% endif %}
+      <p class="status" id="status"></p>
+      <div class="actions">
+        <button id="retry" type="button">Retry now</button>
+        <a class="link" id="home" href="#" hidden>Go to homepage</a>
+      </div>
+{# Names which of the two pages you're looking at, so "which branch did Caddy
+   take?" is answerable from the browser without reading logs. #}
+      <p class="tag">edge-router &middot; {{ edge_error_mode }}</p>
+    </main>
+    <script>
+      (function () {
+        var MAX_ATTEMPTS = {{ edge_error_max_attempts }};
+        var DELAY = {{ edge_error_retry_delay }};
+        var HANDOFF = {{ edge_error_handoff_delay }};
+        var HOMEPAGE = "{{ edge_homepage_service }}";
+        var STALE_MS = 120000;
+
+        var host = location.hostname;
+        var label = host.split(".")[0];
+        var parent = host.split(".").slice(1).join(".");
+        var statusEl = document.getElementById("status");
+        var homeEl = document.getElementById("home");
+
+        if (label) {
+          document.getElementById("service").textContent = label;
+        }
+
+        // The homepage is only an escape hatch from somewhere else - on the
+        // homepage's own hostname it would point back at this same page.
+        var homeUrl =
+          label !== HOMEPAGE && parent
+            ? location.protocol + "//" + HOMEPAGE + "." + parent + "/"
+            : null;
+        if (homeUrl) {
+          homeEl.href = homeUrl;
+          homeEl.hidden = false;
+        }
+
+        // The attempt count has to survive the reloads it drives, so it
+        // lives in sessionStorage. Blocked storage just means every load
+        // looks like a first attempt, which is a fine way to degrade.
+        var key = "edge-error:" + host;
+
+        function navigatedByReload() {
+          try {
+            var nav = performance.getEntriesByType("navigation")[0];
+            return !!nav && nav.type === "reload";
+          } catch (e) {
+            return false;
+          }
+        }
+
+        function attemptsSoFar() {
+          // A refresh is the user asking to start over; only this page's own
+          // scripted navigations continue a count.
+          if (navigatedByReload()) {
+            return 0;
+          }
+          try {
+            var saved = JSON.parse(sessionStorage.getItem(key) || "null");
+            if (saved && Date.now() - saved.t < STALE_MS) {
+              return saved.n;
+            }
+          } catch (e) {}
+          return 0;
+        }
+
+        function forget() {
+          try {
+            sessionStorage.removeItem(key);
+          } catch (e) {}
+        }
+
+        function checkAgain(n) {
+          try {
+            sessionStorage.setItem(key, JSON.stringify({ n: n, t: Date.now() }));
+          } catch (e) {}
+          // replace() rather than reload(): reload() would re-send a POST
+          // that failed, and re-navigating to the same URL is always a GET.
+          location.replace(location.href);
+        }
+
+        // Counts down in the status line, then runs done().
+        function countdown(seconds, label, finalText, done) {
+          var left = seconds;
+          (function tick() {
+            if (left <= 0) {
+              statusEl.textContent = finalText;
+              done();
+              return;
+            }
+            statusEl.textContent = label(left);
+            left -= 1;
+            setTimeout(tick, 1000);
+          })();
+        }
+
+        document.getElementById("retry").addEventListener("click", function () {
+          checkAgain(0);
+        });
+
+        var done = attemptsSoFar();
+
+        if (done >= MAX_ATTEMPTS) {
+          if (homeUrl) {
+            countdown(
+              HANDOFF,
+              function (left) {
+                return "Still down after " + MAX_ATTEMPTS + " checks · opening the homepage in " + left + "s";
+              },
+              "Opening the homepage…",
+              function () {
+                // Drop the count on the way out, so coming back to this
+                // service later starts a fresh cycle instead of bouncing
+                // straight to the homepage again.
+                forget();
+                location.replace(homeUrl);
+              }
+            );
+          } else {
+            statusEl.textContent = "Still down after " + MAX_ATTEMPTS + " checks. Not retrying automatically any more.";
+          }
+          return;
+        }
+
+        var attempt = done + 1;
+        countdown(
+          DELAY,
+          function (left) {
+            return "Checking again in " + left + "s · attempt " + attempt + " of " + MAX_ATTEMPTS;
+          },
+          "Checking…",
+          function () {
+            checkAgain(attempt);
+          }
+        );
+      })();
+    </script>
+  </body>
+</html>

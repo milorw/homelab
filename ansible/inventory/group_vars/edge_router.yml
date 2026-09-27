@@ -14,6 +14,24 @@ jellyfin_ip: "{{ hostvars[groups['jellyfin'][0]].ansible_host }}"
 minecraft_ip: "{{ hostvars[groups['minecraft'][0]].ansible_host }}"
 proxmox_ip: "{{ hostvars[groups['proxmox_nodes'][0]].ansible_host }}"
 
+# Error-page behaviour. Every HTTP service gets a static page rendered onto
+# the edge router itself, so it's still servable when the backend host is
+# down - see docs/Ansible/edge-router.md.
+#
+# dial_timeout has to be short for that page to be any use: a powered-off
+# backend drops SYNs rather than refusing them, so without it the browser
+# hangs on the OS TCP timeout instead of showing anything.
+edge_dial_timeout: 5s
+# The error page retries the original URL this many times, this far apart...
+edge_error_retry_delay: 8
+edge_error_max_attempts: 5
+# ...then hands off to the homepage after this many seconds, rather than
+# sitting on a dead page. Only applies where there's somewhere to go: on
+# the homepage's own hostname the page just stops retrying.
+edge_error_handoff_delay: 5
+# Which service in edge_services the error page links to as an escape hatch.
+edge_homepage_service: homepage
+
 edge_domains:
   milorw.me:
     cf_env_name: CF_API_TOKEN_MILORW
@@ -61,7 +79,7 @@ edge_services:
     reverse_proxy:
       - address: "{{ proxmox_ip }}"
         port: 8006
-        transport_http: tls_insecure_skip_verify
+        transport_http: [tls_insecure_skip_verify]
 
   jellyfin:
     encodings: [gzip, zstd]
@@ -100,7 +118,7 @@ edge_services:
     reverse_proxy:
       - address: "{{ minecraft_ip }}"
         port: "{{ service_ports.crafty }}"
-        transport_http: tls_insecure_skip_verify
+        transport_http: [tls_insecure_skip_verify]
         headers:
           Host: host
 

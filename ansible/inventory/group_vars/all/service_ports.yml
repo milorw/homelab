@@ -10,4 +10,5 @@ service_ports:
   minecraft: 25565
   crafty: 8443
   mealie: 9925
+  homepage: 3010
   jellyfin: 8096

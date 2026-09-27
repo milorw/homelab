@@ -1,0 +1,24 @@
+{# Managed by Ansible (docker-apps.yml). Do not edit by hand. #}
+{% set edge = hostvars[groups['edge_router'][0]] %}
+{% set allowed = [] %}
+{% for domain, dattrs in edge.edge_domains.items() %}
+{% if 'homepage' in dattrs.services %}
+{% set _ = allowed.append('homepage.' ~ domain) %}
+{% endif %}
+{% endfor %}
+{% set _ = allowed.append(ansible_host ~ ':' ~ service_ports.homepage) %}
+
+services:
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    restart: unless-stopped
+    environment:
+      - TZ=America/Los_Angeles
+      - HOMEPAGE_ALLOWED_HOSTS={{ allowed | join(',') }}
+    ports:
+      - "{{ service_ports.homepage }}:3000"
+    volumes:
+      - ./config:/app/config
+      # Read-only, for the container status shown next to each service.
+      - /var/run/docker.sock:/var/run/docker.sock:ro

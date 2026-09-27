@@ -1,0 +1,12 @@
+{# Managed by Ansible (docker-apps.yml). Do not edit by hand. #}
+
+title: {{ homepage_title }}
+headerStyle: clean
+theme: dark
+color: slate
+layout:
+{% for group in homepage_groups %}
+  {{ group }}:
+    style: row
+    columns: 3
+{% endfor %}

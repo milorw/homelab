@@ -1,0 +1,53 @@
+{# Managed by Ansible (docker-apps.yml). Do not edit by hand. #}
+{#
+  Generated from the edge router's own vars, so the dashboard and the
+  reverse proxy can't drift apart. Only services every domain in
+  edge_domains carries are listed, and homepage itself is left out.
+
+  A service with an entry in homepage_widgets gets that widget and no
+  href; everything else gets a plain link. Display name, icon, blurb and
+  group come from homepage_service_meta, which is optional per service.
+#}
+{% set edge = hostvars[groups['edge_router'][0]] %}
+{% set ns = namespace(shared=[], members=[], in_all=true) %}
+{% for service in (edge.edge_domains.values() | list | first).services %}
+{% set ns.in_all = true %}
+{% for domain, dattrs in edge.edge_domains.items() %}
+{% if service not in dattrs.services %}
+{% set ns.in_all = false %}
+{% endif %}
+{% endfor %}
+{% if ns.in_all and service != 'homepage' %}
+{% set _ = ns.shared.append(service) %}
+{% endif %}
+{% endfor %}
+{% for group in homepage_groups %}
+{% set ns.members = [] %}
+{% for service in ns.shared %}
+{% if homepage_service_meta.get(service, {}).get('group', 'Services') == group %}
+{% set _ = ns.members.append(service) %}
+{% endif %}
+{% endfor %}
+{% if ns.members %}
+
+- {{ group }}:
+{% for service in ns.members %}
+{% set meta = homepage_service_meta.get(service, {}) %}
+    - {{ meta.get('name', service | capitalize) }}:
+        icon: {{ meta.get('icon', service ~ '.png') }}
+{% if meta.description is defined %}
+        description: {{ meta.description }}
+{% endif %}
+{% if service in homepage_widgets %}
+        widget:
+{{ homepage_widgets[service] | to_nice_yaml(indent=2) | trim | indent(10, true) }}
+{% else %}
+        href: https://{{ service }}.{{ homepage_link_domain }}
+{% endif %}
+{% if service in homepage_docker_containers %}
+        server: my-docker
+        container: {{ homepage_docker_containers[service] }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}

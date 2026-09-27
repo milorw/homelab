@@ -9,3 +9,4 @@ service_ports:
   sure: 3000
   minecraft: 25565
   crafty: 8443
+  mealie: 9925

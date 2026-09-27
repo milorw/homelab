@@ -1,0 +1,25 @@
+{# Managed by Ansible (docker-apps.yml). Do not edit by hand. #}
+
+services:
+  mealie:
+    image: ghcr.io/mealie-recipes/mealie:latest
+    container_name: mealie
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1000M
+    env_file:
+      - .env
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+      - ALLOW_SIGNUP=false
+      - BASE_URL={{ mealie_base_url }}
+      - OPENAI_CUSTOM_PROMPT_DIR=/app/custom-prompts
+    ports:
+      - "{{ service_ports.mealie }}:9000"
+    volumes:
+      - /srv/appdata/mealie_data:/app/data
+      - ./prompts:/app/custom-prompts:ro

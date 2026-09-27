@@ -8,6 +8,9 @@ sure_postgres_db: sure_production
 sure_ai_model: "gpt-5-mini-2025-08-07"
 sure_ai_uri_base: "https://api.openai.com/v1/"
 
+# --- mealie ---
+mealie_base_url: "https://mealie.milorw.me"
+
 # Secrets, pulled from vault.
 homebox_api_key_pepper: "{{ vault_homebox_api_key_pepper }}"
 sure_postgres_password: "{{ vault_sure_postgres_password }}"

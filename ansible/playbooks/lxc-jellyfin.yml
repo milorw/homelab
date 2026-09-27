@@ -253,7 +253,7 @@
 
     - name: Wait for jellyfin to answer on its port
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ jellyfin_port }}/health"
+        url: "http://127.0.0.1:{{ service_ports.jellyfin }}/health"
         status_code: [200]
       register: jellyfin_health
       retries: 12
@@ -263,7 +263,7 @@
     - name: Report
       ansible.builtin.debug:
         msg: >-
-          jellyfin is up on port {{ jellyfin_port }}, running as
+          jellyfin is up on port {{ service_ports.jellyfin }}, running as
           uid {{ jellyfin_uid }} with GPU and media access, data in
           {{ jellyfin_data_dir }}.
 

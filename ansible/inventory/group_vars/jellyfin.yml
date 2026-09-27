@@ -49,6 +49,3 @@ jellyfin_media_dir: /opt/jellyfin
 jellyfin_repo_url: https://repo.jellyfin.org/debian
 jellyfin_repo_key_url: https://repo.jellyfin.org/jellyfin_team.gpg.key
 jellyfin_repo_keyring: /etc/apt/keyrings/jellyfin.asc
-
-# --- Service -------------------------------------------------------------
-jellyfin_port: 8096

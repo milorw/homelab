@@ -1,0 +1,22 @@
+{# Managed by Ansible (lxc-minecraft.yml). Do not edit by hand. #}
+services:
+  crafty:
+    container_name: crafty
+    image: registry.gitlab.com/crafty-controller/crafty-4:latest
+    restart: unless-stopped
+    environment:
+      - TZ=America/Los_Angeles
+    ports:
+      - "{{ service_ports.crafty }}:8443"
+      - "{{ service_ports.minecraft }}:{{ service_ports.minecraft }}"
+    volumes:
+      - "{{ crafty_backup_dir }}:/crafty/backups"
+      - "{{ crafty_root }}/logs:/crafty/logs"
+      # SSD mount - the only Crafty path that needs the speed
+      - "{{ crafty_servers_dir }}:/crafty/servers"
+      - "{{ crafty_root }}/config:/crafty/app/config"
+      - "{{ crafty_root }}/import:/crafty/import"
+      # Java 25 isn't bundled in Crafty's image (only 8/11/17) - bind-mount
+      # the host's pinned install so it can be selected as a server's Java
+      # Path in the web UI. Same path inside and outside the container.
+      - "{{ java_home }}:{{ java_home }}:ro"

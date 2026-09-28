@@ -29,7 +29,17 @@ jobs:
       - name: Install lint tools
         run: pip install -r .github/requirements-lint.txt
 
+      # Galaxy downloads are the slowest part of the job, so keep them between
+      # runs. The cache refreshes whenever requirements.yml changes.
+      - name: Cache collections
+        id: collections-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ansible/collections
+          key: ansible-collections-${{ hashFiles('.github/requirements.yml') }}
+
       - name: Install collections
+        if: steps.collections-cache.outputs.cache-hit != 'true'
         run: ansible-galaxy collection install -r .github/requirements.yml
 
       - name: yamllint

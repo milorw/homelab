@@ -48,6 +48,6 @@ Crafty's image only bundles Java 8, 11 and 17. Java 25 is installed on the LXC a
 | What | How |
 |---|---|
 | Game | `minecraft.<domain>`, forwarded by HAProxy on the edge router (`service_ports.minecraft`, 25565) |
-| Crafty web panel | `mcpanel.milorw.me`, through Caddy (`service_ports.crafty`, 8443). Crafty serves its own self-signed HTTPS, so the edge entry uses `tls_insecure_skip_verify` and passes the original `Host` header. |
+| Crafty web panel | `mcpanel.milorw.me`, through Caddy (`service_ports.crafty`, 8443). Crafty serves its own self-signed HTTPS, so its catalog entry (`crafty`, with `subdomain: mcpanel`) uses `tls_insecure_skip_verify` and passes the original `Host` header. |
 
 See [edge-router.md](edge-router.md).

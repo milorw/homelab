@@ -1,0 +1,109 @@
+# Service catalog - the one place to register a service. The port registry,
+# edge router and homepage vars are all generated from it. Fields are
+# described in docs/adding-a-service.md; in short:
+#
+#   port                  listening port -> service_ports.<name>
+#   host / address        inventory group it runs on, or a literal IP
+#   domains               domains it gets a hostname on
+#   subdomain             hostname, when it isn't <name>
+#   proxy / tcp           HTTP route through Caddy, or TCP forward via HAProxy
+#   homepage, container   dashboard entry, and container name for its status
+#   firewall              sources allowed to reach it (not wired up yet)
+#
+# Order is the order services appear on the homepage.
+services:
+
+  homebox:
+    host: docker_apps
+    port: 3100
+    domains: [milorw.me, owennwb.com]
+    proxy: {encodings: [gzip, zstd]}
+    homepage: {name: Homebox, icon: homebox.png, description: Inventory, group: Home}
+    container: homebox
+    firewall: [edge_router]
+
+  sure:
+    host: docker_apps
+    port: 3000
+    domains: [milorw.me, owennwb.com]
+    proxy: {encodings: [gzip, zstd]}
+    homepage: {name: Sure, icon: mdi-finance, description: Finances, group: Home}
+    # Compose's default <project>-<service>-1 - sure doesn't set container_name.
+    container: sure-web-1
+    firewall: [edge_router]
+
+  # HTTPS-only with a self-signed cert.
+  proxmox:
+    host: proxmox_nodes
+    port: 8006
+    domains: [milorw.me]
+    proxy:
+      encodings: [gzip, zstd]
+      transport_http: [tls_insecure_skip_verify]
+
+  jellyfin:
+    host: jellyfin
+    port: 8096
+    domains: [milorw.me, owennwb.com]
+    proxy: {encodings: [gzip, zstd]}
+    homepage: {name: Jellyfin, icon: jellyfin.png, description: Media library, group: Media}
+    # Direct LAN/tailnet access too, for local playback on TVs and phones.
+    firewall: [edge_router, lan_net, ts_net]
+
+  ombi:
+    host: docker_apps
+    port: 3579
+    domains: [milorw.me, owennwb.com]
+    proxy: {encodings: [gzip, zstd]}
+    homepage: {name: Ombi, icon: ombi.png, description: Media requests, group: Media}
+    container: ombi
+    firewall: [edge_router]
+
+  # A separate appliance, not managed by this repo.
+  ha:
+    address: 192.168.68.2
+    port: 8123
+    domains: [milorw.me, owennwb.com]
+    proxy: {encodings: [gzip, zstd]}
+    homepage: {name: Home Assistant, icon: home-assistant.png, description: Automation, group: Home}
+
+  # Not HTTP, so forwarded by HAProxy instead of Caddy.
+  minecraft:
+    host: minecraft
+    port: 25565
+    domains: [milorw.me, owennwb.com]
+    tcp: true
+    homepage: {name: Minecraft, icon: minecraft.png, description: Game server, group: Games}
+    firewall: [edge_router]
+
+  # Crafty's web panel. Self-signed HTTPS, and needs the original Host header.
+  crafty:
+    host: minecraft
+    port: 8443
+    subdomain: mcpanel
+    domains: [milorw.me]
+    proxy:
+      encodings: [gzip, zstd]
+      transport_http: [tls_insecure_skip_verify]
+      headers: {Host: host}
+    firewall: [edge_router, lan_net, ts_net]
+
+  mealie:
+    host: docker_apps
+    port: 9925
+    domains: [milorw.me, owennwb.com]
+    proxy: {encodings: [gzip, zstd]}
+    homepage: {name: Mealie, icon: mealie.png, description: Recipes, group: Home}
+    container: mealie
+    firewall: [edge_router]
+
+  homepage:
+    host: docker_apps
+    port: 3010
+    domains: [milorw.me, owennwb.com]
+    proxy: {encodings: [gzip, zstd]}
+    firewall: [edge_router]
+
+# Port registry, generated from the entries above - reference ports as
+# service_ports.<name> everywhere.
+service_ports: "{{ dict(services.keys() | zip(services.values() | map(attribute='port'))) }}"

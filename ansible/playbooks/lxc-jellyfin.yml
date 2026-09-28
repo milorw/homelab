@@ -5,17 +5,10 @@
 
   tasks:
 
-    # --- Identity ---
+    # --- Identity - see docs/Ansible/jellyfin.md ---
     #
-    # This runs BEFORE the package is installed, deliberately. Jellyfin's
-    # postinst creates its own user if one doesn't exist, and Debian would
-    # allocate whatever system uid happens to be free - leaving the service
-    # not owning its own library on /tank. Creating the account first with
-    # pinned ids means the package adopts it.
-    #
-    # The container is privileged with no idmap, so these ids are the same
-    # numbers on the Proxmox host. They have to match what already owns
-    # /tank/appdata/jellyfin_data and /tank/jellyfin.
+    # Before the package on purpose: its postinst adopts an existing account,
+    # instead of creating one with whatever uid is free.
 
     - name: Create the jellyfin group
       ansible.builtin.group:
@@ -24,12 +17,8 @@
         system: true
         state: present
 
-    # video/render carry the GPU device nodes - terraform pins the same
-    # gids on the passed-through devices. jellyfin_srv owns the media and
-    # is shared with samba, which force-creates files into it.
-    # A gid held by some *other* group makes `group:` fail with a bare
-    # "groupmod: GID 'N' already exists", which says nothing about which
-    # group is in the way.
+    # Checked first, because a gid held by another group otherwise fails
+    # with a bare "GID 'N' already exists" that doesn't name the group.
     - name: Read existing groups
       ansible.builtin.getent:
         database: group
@@ -125,22 +114,18 @@
 
     # --- Storage ---
     #
-    # These live on the /tank/appdata mount. The playbook does not create
-    # or touch their contents: the library database, metadata and user
-    # accounts inside are state, in the same way /tank/appdata/*_data is
-    # for every other service here.
-
-    # These paths exist either way - the package creates them - so checking
-    # they exist proves nothing. What matters is whether they're the bind
-    # mounts from /tank/appdata or empty directories on the container's own
-    # disk, which is the difference between the library being on the pool
-    # and being quietly rebuilt from scratch on the rootfs.
+    # The contents are app state - the playbook never touches them. It only
+    # checks they're real bind mounts from /tank/appdata: the package creates
+    # the paths either way, and an empty rootfs directory would silently
+    # rebuild the library.
     - name: Check the appdata bind mounts are in place
       ansible.builtin.command:
         argv: [findmnt, --noheadings, --output, SOURCE, --target, "{{ item }}"]
       register: jellyfin_mounts
       changed_when: false
       failed_when: false
+      # Read-only, so it runs under --check too - later tasks need its output.
+      check_mode: false
       loop:
         - "{{ jellyfin_data_dir }}"
         - "{{ jellyfin_config_dir }}"
@@ -203,11 +188,8 @@
         group: root
         mode: "0755"
 
-    # Without this jellyfin writes 0644 files and 0755 directories, so the
-    # artwork and trickplay data it generates alongside the media is not
-    # writable by the jellyfin_srv group - meaning samba users can't manage
-    # or delete it. Samba already force-creates 0664/2775 into that group;
-    # this makes jellyfin symmetrical with it.
+    # UMask=002, so files jellyfin writes next to the media are
+    # group-writable, matching what samba creates.
     - name: Make jellyfin create group-writable files
       ansible.builtin.template:
         src: jellyfin/umask.conf.j2
@@ -232,10 +214,7 @@
 
     # --- Verification ---
 
-    # runuser rather than sudo: it's part of util-linux and always present,
-    # whereas sudo may not be installed in a minimal container. This proves
-    # the access as the service account itself rather than inferring it
-    # from group membership.
+    # As the service account itself. runuser, since sudo may not be installed.
     - name: Check jellyfin can reach the GPU and its storage
       ansible.builtin.command:
         argv: [runuser, -u, jellyfin, --, test, -w, "{{ item }}"]
@@ -251,7 +230,7 @@
 
     - name: Wait for jellyfin to answer on its port
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ jellyfin_port }}/health"
+        url: "http://127.0.0.1:{{ service_ports.jellyfin }}/health"
         status_code: [200]
       register: jellyfin_health
       retries: 12
@@ -261,7 +240,7 @@
     - name: Report
       ansible.builtin.debug:
         msg: >-
-          jellyfin is up on port {{ jellyfin_port }}, running as
+          jellyfin is up on port {{ service_ports.jellyfin }}, running as
           uid {{ jellyfin_uid }} with GPU and media access, data in
           {{ jellyfin_data_dir }}.
 

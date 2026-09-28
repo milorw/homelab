@@ -17,13 +17,17 @@ Three services run under Docker Compose in `/opt/edge` (see [ADR 0011](../adr/00
 
 ### Configuration
 
-`ansible/inventory/group_vars/edge_router.yml` is the single source of truth for domains and services:
+Services are registered in the service catalog, `ansible/inventory/group_vars/all/services.yml` - see [ADR 0021](../adr/0021-service-catalog.md). Each entry's `domains`, `proxy`, `tcp` and `subdomain` fields decide how the edge router serves it. `ansible/inventory/group_vars/edge_router.yml` holds the rest:
 
-- `edge_domains` - each domain, the env var its Cloudflare token is passed in, and the list of services it serves. A service only gets a hostname on the domains that list it.
-- `edge_services` - HTTP services for Caddy: backend `address`/`port`, response `encodings`, and optionally `transport_http` and `headers`.
-- `edge_tcp_services` - TCP services for HAProxy: listen port, backend address and port.
+- `edge_domain_settings` - each domain, and the env var its Cloudflare token is passed in. Adding a domain starts here.
+- The error-page and Tailscale settings described below.
+- Generated from the catalog, and read by the templates:
+  - `edge_domains` - each domain with the hostnames it serves, in catalog order
+  - `edge_services` - one Caddy entry per catalog service with a `proxy` block: backend `address`/`port`, response `encodings`, and optionally `transport_http` and `headers`
+  - `edge_tcp_services` - one HAProxy forward per catalog service with `tcp: true`, on the same port at both ends
+  - `edge_backend_addresses` - each service's backend address: its literal `address` if it has one (Home Assistant, which this repo doesn't manage), otherwise the first host in its `host` inventory group. No IP managed by this repo is written down twice.
 
-Backend addresses for LXCs in this repo are looked up from the inventory (`docker_apps_ip`, `jellyfin_ip`, `minecraft_ip`, `proxmox_ip`) rather than written out. Only things this repo doesn't manage, like Home Assistant, use a literal IP.
+A service is served as `<name>.<domain>`, or `<subdomain>.<domain>` if it sets one - crafty's panel is `mcpanel`.
 
 The Cloudflare tokens come from the vault - see [ADR 0010](../adr/0010-vault-for-cloudflare-tokens.md) - and are rendered into `/opt/edge/.env` (`0600`).
 
@@ -35,7 +39,7 @@ The Tailscale IP isn't a static var. The play reads `tailscale status --json` an
 
 ### HTTPS backends with self-signed certificates
 
-Proxmox's web UI is HTTPS-only with a self-signed certificate. Its entry sets `transport_http: [tls_insecure_skip_verify]`, which renders as:
+Proxmox's web UI is HTTPS-only with a self-signed certificate. Its catalog entry sets `proxy.transport_http: [tls_insecure_skip_verify]`, which renders as:
 
 ```
 reverse_proxy 192.168.68.90:8006 {

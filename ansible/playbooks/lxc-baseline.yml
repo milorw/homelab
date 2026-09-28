@@ -2,13 +2,8 @@
   hosts: proxmox_all_lxc
   gather_facts: false
 
-  # Settings that should hold across the whole fleet regardless of what a
-  # container is for. Role-specific configuration belongs in that role's
-  # own playbook - this is only for things it would be wrong to let drift
-  # between containers.
-  #
-  # proxmox_all_lxc is created by the inventory plugin itself (group_prefix
-  # defaults to "proxmox_"), so it covers every LXC without needing a tag.
+  # Settings every LXC should share - see docs/Ansible/lxc-baseline.md.
+  # proxmox_all_lxc is created by the inventory plugin, so no tag is needed.
 
   tasks:
 
@@ -23,15 +18,15 @@
         mode: "0644"
       notify: Reload sshd
 
-    # A drop-in can't be validated on its own - sshd -t needs the whole
-    # config. So write it, test the result, and pull it back out if it
-    # broke anything. Restarting sshd on a config it rejects would leave
-    # the container unreachable.
+    # Test the whole config, and pull the drop-in back out if sshd rejects it,
+    # rather than reloading into a config that locks us out.
     - name: Validate the resulting sshd config
       ansible.builtin.command: sshd -t
       register: sshd_test
       changed_when: false
       failed_when: false
+      # Read-only, so it runs under --check too - later tasks need its output.
+      check_mode: false
 
     - name: Remove the drop-in if it broke the config
       ansible.builtin.file:
@@ -51,10 +46,8 @@
 
     # --- Verification ---
 
-    # The reload is a handler rather than a task on purpose: a failed play
-    # never runs handlers, so the assert above physically cannot be
-    # followed by a reload of a config sshd rejected. Flushing here just
-    # brings it forward so the read-back below sees the new state.
+    # The reload is a handler so a failed play never reloads a rejected
+    # config; flushing just brings it forward for the read-back.
     - name: Apply the reload before reading the policy back
       ansible.builtin.meta: flush_handlers
 
@@ -62,6 +55,8 @@
       ansible.builtin.command: sshd -T
       register: sshd_effective
       changed_when: false
+      # Under --check the drop-in wasn't written, so there's nothing to read back.
+      when: not ansible_check_mode
 
     # sshd -T normalises to the older spelling, so compare against both.
     - name: Check the effective policy matches what we asked for
@@ -73,6 +68,7 @@
           '{{ lxc_permit_root_login }}'. Something later in the include order
           is overriding /etc/ssh/sshd_config.d/10-root-login.conf.
         success_msg: "PermitRootLogin is {{ effective }}"
+      when: not ansible_check_mode
       vars:
         effective: >-
           {{ sshd_effective.stdout_lines

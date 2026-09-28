@@ -1,8 +1,7 @@
-- name: Configure edge router (Caddy + CoreDNS)
+- name: Configure edge router (Caddy + CoreDNS + HAProxy)
   hosts: edge_router
   gather_facts: true
-  # Handlers run at the end of a play, so a failure partway through would
-  # otherwise leave a rendered config file on disk that never gets loaded
+  # Run handlers even if a later task fails, so rendered config still loads.
   force_handlers: true
 
   vars:
@@ -11,8 +10,7 @@
     edge_data_dir: "{{ edge_root }}/data"
     edge_caddy_state_dir: "{{ edge_root }}/caddy-state"
     edge_errors_dir: "{{ edge_config_dir }}/errors"
-    # Where that same directory lands inside the caddy container, since
-    # config/ is mounted at /etc/caddy - this is what the Caddyfile refers to
+    # The same directory inside the caddy container (config/ -> /etc/caddy).
     edge_errors_container_dir: /etc/caddy/errors
 
   tasks:
@@ -35,6 +33,8 @@
       register: tailscale_status_raw
       changed_when: false
       failed_when: false # tailscale exits 1 when not connected
+      # Read-only, so it runs under --check too - later tasks need its output.
+      check_mode: false
 
     - name: Parse tailscale status
       ansible.builtin.set_fact:
@@ -53,24 +53,9 @@
       ansible.builtin.set_fact:
         edge_tailscale_ip: "{{ tailscale_status.TailscaleIPs | select('match', '^[0-9]+\\.') | first }}"
 
-    # --- Subnet router -----------------------------------------------------
-    #
-    # These were hand-set on the container and invisible to this repo, which
-    # meant nothing recorded that the edge routes the whole LAN for the
-    # tailnet - or that it rewrote the source address while doing it.
-    #
-    # snat_subnet_routes: false is the important half. With SNAT on, remote
-    # traffic reaches the LAN wearing the edge's own address, so every guest
-    # sees it as edge_router and the firewall can't tell a tailnet user from
-    # the reverse proxy. Off, the real 100.x source survives and the ts_net
-    # rules mean what they say.
-    #
-    # It requires a return route: without SNAT the guests answer 100.x, and
-    # their default gateway has no idea where that is. See
-    # docs/Ansible/edge-router.md.
+    # --- Tailscale subnet router - see docs/Ansible/edge-router.md ---------
 
-    # Derived from inventory, so an empty or broken lookup would silently
-    # advertise nothing and take remote SSH and SMB down with it.
+    # Built from inventory: an empty list would silently cut off remote SSH/SMB.
     - name: Check the advertised route list resolved
       ansible.builtin.assert:
         that:
@@ -88,14 +73,15 @@
       ansible.builtin.command: tailscale debug prefs
       register: tailscale_prefs_raw
       changed_when: false
+      # Read-only, so it runs under --check too - later tasks need its output.
+      check_mode: false
 
     - name: Parse tailscale prefs
       ansible.builtin.set_fact:
         tailscale_prefs: "{{ tailscale_prefs_raw.stdout | from_json }}"
 
-    # tailscale set is idempotent, but running it unconditionally would
-    # report changed every time, so compare first. NoSNAT is the inverse of
-    # the --snat-subnet-routes flag.
+    # Only when something differs, so it doesn't report changed every run.
+    # NoSNAT is the inverse of --snat-subnet-routes.
     - name: Apply subnet router prefs
       ansible.builtin.command:
         argv:
@@ -114,6 +100,8 @@
       ansible.builtin.command: tailscale debug prefs
       register: tailscale_prefs_after
       changed_when: false
+      # Under --check nothing was applied, so there's nothing to confirm.
+      when: not ansible_check_mode
 
     - name: Fail if the subnet router prefs did not apply
       ansible.builtin.assert:
@@ -128,6 +116,7 @@
           A newly advertised route also has to be approved in the tailnet
           admin console before it carries traffic.
         quiet: true
+      when: not ansible_check_mode
       vars:
         after: "{{ tailscale_prefs_after.stdout | from_json }}"
 
@@ -137,10 +126,7 @@
         state: directory
         mode: "{{ item.mode }}"
       loop:
-        # config is 0755 because it's mounted as a directory, so processes inside
-        # the containers have to traverse it - and the haproxy image runs as a
-        # non-root user. Nothing secret lives here; the Cloudflare tokens are in
-        # {{ edge_root }}/.env (0600).
+        # 0755: haproxy runs as non-root and has to traverse it. No secrets here.
         - { path: "{{ edge_config_dir }}", mode: "0755" }
         - { path: "{{ edge_errors_dir }}", mode: "0755" }
         # data holds Caddy's certificate private keys - keep it tight
@@ -162,20 +148,15 @@
         src: edge_router/Caddyfile.j2
         dest: "{{ edge_config_dir }}/Caddyfile"
         mode: "0644"
-      # No notify - the unconditional reload after the stack comes up covers
-      # this, so a config that gets rendered but never loaded can't happen.
+      # No notify - Caddy is reloaded on every run, at the end.
 
-    # No notify: Caddy reads these off disk per request, so a changed page is
-    # live immediately - there's no loaded copy to invalidate.
+    # No notify - Caddy reads these from disk on every request.
     - name: Render error pages
       ansible.builtin.template:
         src: edge_router/error.html.j2
         dest: "{{ edge_errors_dir }}/{{ item }}.html"
         mode: "0644"
       loop:
-        # unreachable - Caddy couldn't reach the backend at all
-        # starting    - backend answered 502/503/504 itself, i.e. it's up but
-        #               not serving yet (usually waiting on its database)
         - unreachable
         - starting
       vars:
@@ -213,30 +194,21 @@
         project_src: "{{ edge_root }}"
         state: present
 
-    # Convergence rather than a change: `caddy reload` is a no-op when the
-    # running config already matches ("config is unchanged" in the log).
-    # Safe to run unconditionally now that config is a directory mount - the
-    # container genuinely sees the current file, so this can't push a stale
-    # view back. It also means a Caddyfile rendered by a run that died
-    # before its handler can't stay unloaded forever.
-    # -T because there's no TTY under Ansible.
+    # Every run, not a handler: a no-op when nothing changed, and a Caddyfile
+    # rendered by a failed run can't stay unloaded. -T: no TTY under Ansible.
     - name: Ensure Caddy has loaded the current Caddyfile
       ansible.builtin.command: docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
       args:
         chdir: "{{ edge_root }}"
       changed_when: false
-      # `docker compose up` returns once containers are started, which is a
-      # moment before Caddy's admin API is actually listening - and any run
-      # that changes the compose file recreates them, so this races.
+      # Caddy's admin API comes up a moment after the container starts.
       register: caddy_reload
       until: caddy_reload.rc == 0
       retries: 5
       delay: 3
 
   handlers:
-    # changed_when: true - these only ever run because a config file changed,
-    # and restarting a container is a real state change. Ansible can't infer
-    # that from a bare command, hence declaring it.
+    # changed_when: true - a restart is a real change Ansible can't infer.
     - name: Restart coredns
       ansible.builtin.command: docker compose restart coredns
       args:
@@ -249,8 +221,7 @@
         chdir: "{{ edge_root }}"
       changed_when: true
 
-    # Env vars are only read when a container is created, so a .env change
-    # genuinely needs a recreate - a restart won't pick it up.
+    # .env is only read when a container is created - a restart won't do.
     - name: Recreate stack
       community.docker.docker_compose_v2:
         project_src: "{{ edge_root }}"

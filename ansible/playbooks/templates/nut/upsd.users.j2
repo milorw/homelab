@@ -1,9 +1,0 @@
-# {{ ansible_managed }}
-# /etc/nut/upsd.users - credentials upsd accepts.
-#
-# This password must match the one on the MONITOR line in upsmon.conf;
-# both render from nut_monuser_password, so they cannot drift.
-
-[{{ nut_monuser }}]
-    password = {{ nut_monuser_password }}
-    upsmon {{ nut_monuser_role }}

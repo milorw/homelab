@@ -1,0 +1,108 @@
+# Package updates for every LXC, then the Proxmox host - see
+# docs/Ansible/package-updates.md.
+#
+#   ansible-playbook playbooks/update-packages.yml --check      # preview only
+#   ansible-playbook playbooks/update-packages.yml              # security updates
+#   ansible-playbook playbooks/update-packages.yml -e update_scope=all
+
+- name: Update LXC packages
+  hosts: proxmox_all_lxc
+  gather_facts: false
+  # One container at a time, stopping at the first failure, so a bad
+  # update can't take out every LXC.
+  serial: 1
+  max_fail_percentage: 0
+
+  vars:
+    update_scope: security
+    update_upgrade_mode: safe
+    # Rollback point: a backup of the container's own disk, taken just before
+    # updating it. The newest one per container is kept.
+    update_backup: true
+    update_backup_storage: tank-backup
+    update_backup_notes: update-packages pre-update
+
+  tasks:
+    - name: Check the settings
+      ansible.builtin.assert:
+        that:
+          - update_scope in ['security', 'all']
+          - not update_backup or proxmox_vmid is defined
+        fail_msg: >-
+          update_scope must be 'security' or 'all' (got '{{ update_scope }}'),
+          and backups need proxmox_vmid from the dynamic inventory.
+        quiet: true
+
+    - name: Update packages
+      ansible.builtin.include_tasks: tasks/package-updates.yml
+
+- name: Update Proxmox host packages
+  hosts: proxmox_nodes
+  gather_facts: false
+  become: true
+  serial: 1
+  max_fail_percentage: 0
+
+  vars:
+    update_scope: security
+    # Proxmox's own docs require dist-upgrade on the host - a plain upgrade
+    # can hold back packages and leave PVE half-updated.
+    update_upgrade_mode: dist
+    update_backup: false
+    # A reboot needed for a new kernel is scheduled for this time (HH:MM) -
+    # after the 04:00 minecraft backup. -e update_schedule_reboot=false to skip.
+    update_schedule_reboot: true
+    update_reboot_time: "05:00"
+
+  tasks:
+    - name: Update packages
+      ansible.builtin.include_tasks: tasks/package-updates.yml
+
+    # --- Reboot, if a new kernel was installed ---
+    # Debian/Proxmox don't create /run/reboot-required, so compare the running
+    # kernel with the newest one installed.
+
+    - name: Read the running kernel
+      ansible.builtin.command: uname -r
+      register: running_kernel
+      changed_when: false
+      check_mode: false
+
+    - name: Find installed kernels
+      ansible.builtin.find:
+        paths: /boot
+        patterns: "vmlinuz-*"
+      register: installed_kernels
+
+    - name: Work out whether a reboot is needed
+      ansible.builtin.set_fact:
+        newest_kernel: >-
+          {{ installed_kernels.files | map(attribute='path') | map('basename')
+             | map('regex_replace', '^vmlinuz-', '') | community.general.version_sort | last }}
+
+    # A transient timer only exists in memory, so rebooting before it fires
+    # clears it - no lingering nightly restarts.
+    - name: Check for an already scheduled reboot  # noqa: command-instead-of-module - querying a transient unit
+      ansible.builtin.command: systemctl is-active update-reboot.timer
+      register: reboot_timer
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Schedule a one-off reboot for {{ update_reboot_time }}
+      ansible.builtin.command: >-
+        systemd-run --unit=update-reboot --on-calendar="*-*-* {{ update_reboot_time }}:00"
+        --timer-property=AccuracySec=1min /usr/bin/systemctl reboot
+      changed_when: true
+      when:
+        - update_schedule_reboot
+        - newest_kernel != running_kernel.stdout
+        - reboot_timer.rc != 0
+
+    - name: Report the reboot
+      ansible.builtin.debug:
+        msg: >-
+          Running kernel {{ running_kernel.stdout }}, newest installed {{ newest_kernel }}.
+          {{ ('Reboot scheduled for ' ~ update_reboot_time ~ ' (cancel with: systemctl stop update-reboot.timer).')
+             if update_schedule_reboot else 'Reboot needed - not scheduled (update_schedule_reboot=false).' }}
+      when: newest_kernel != running_kernel.stdout

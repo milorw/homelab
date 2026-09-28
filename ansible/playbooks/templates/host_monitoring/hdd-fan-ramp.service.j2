@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+[Unit]
+Description=HDD cage fan ramp controller
+Documentation=https://github.com/milorw/proxmox_ansible_playbooks
+After=multi-user.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart={{ pve_monitoring_bin }}/hdd-fan-ramp.sh
+
+# Restart=always, not on-failure: this loop is never supposed to exit, and
+# every cycle doubles as the heartbeat for the MCU's watchdog. A clean
+# exit would silently stop the fan being commanded at all.
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hdd-fan-ramp
+
+[Install]
+WantedBy=multi-user.target

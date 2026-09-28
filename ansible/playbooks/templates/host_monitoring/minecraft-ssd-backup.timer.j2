@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Run the minecraft SSD backup {{ minecraft_backup_schedule }}
+
+[Timer]
+OnCalendar={{ minecraft_backup_schedule }}
+
+# Deliberately offset from the vzdump job at 21:00 - both write to
+# tank/backups, and overlapping them just makes each slower.
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

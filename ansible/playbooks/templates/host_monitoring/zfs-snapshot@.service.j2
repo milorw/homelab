@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Take and prune %i ZFS snapshots
+Documentation=https://github.com/milorw/proxmox_ansible_playbooks
+After=zfs.target
+Requires=zfs.target
+
+[Service]
+Type=oneshot
+ExecStart={{ pve_monitoring_bin }}/zfs-snapshot.sh %i
+SyslogIdentifier=zfs-snapshot
+
+# Taking a snapshot is near-instant and costs no I/O, but pruning one that
+# holds a lot of unique blocks does real work freeing them. Never let that
+# compete with the services whose data it is protecting.
+Nice=19
+IOSchedulingClass=idle

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=HDD temperature guard
+Documentation=https://github.com/milorw/proxmox_ansible_playbooks
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart={{ pve_monitoring_bin }}/hdd-temp-guard.sh
+SyslogIdentifier=hdd-temp-guard

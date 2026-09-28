@@ -1,0 +1,42 @@
+# {{ ansible_managed }}
+# /etc/nut/upsmon.conf - the bit that actually shuts the host down.
+#
+# The pre-Ansible version of this file set MINSUPPLIES, SHUTDOWNCMD,
+# FINALDELAY and POWERDOWNFLAG twice each, with conflicting values.
+# upsmon takes the last occurrence, so the effective config was the
+# second copy; that's what the defaults in group_vars reproduce. Each
+# directive appears exactly once here.
+
+# NOTIFYCMD runs as this user. It needs root to read the monitoring config
+# and the Proxmox relay credentials - see group_vars for the full reason.
+RUN_AS_USER {{ nut_run_as_user }}
+
+MONITOR {{ nut_ups.name }}@{{ nut_upsd_host }} {{ nut_powervalue }} {{ nut_monuser }} {{ nut_monuser_password }} {{ nut_monuser_role }}
+
+# How many power supplies must be fed for this host to keep running.
+MINSUPPLIES {{ nut_minsupplies }}
+
+# Runs pve-shutdown.sh, which stops every guest cleanly and mails before
+# pulling the plug, rather than dropping the host on the floor.
+SHUTDOWNCMD "{{ nut_shutdown_cmd }}"
+POWERDOWNFLAG "{{ nut_powerdownflag }}"
+
+# Power events reach nut-notify.sh, which mails admins and users.
+NOTIFYCMD "{{ nut_notify_cmd }}"
+{% for event, flag in nut_notify_flags | dictsort %}
+NOTIFYFLAG {{ "%-9s" | format(event) }} {{ flag }}
+{% endfor %}
+
+POLLFREQ {{ nut_pollfreq }}
+POLLFREQALERT {{ nut_pollfreqalert }}
+HOSTSYNC {{ nut_hostsync }}
+DEADTIME {{ nut_deadtime }}
+OFFDURATION {{ nut_offduration }}
+
+# Warn this many seconds before a replace-battery / no-comms condition
+# is considered worth nagging about.
+RBWARNTIME {{ nut_rbwarntime }}
+NOCOMMWARNTIME {{ nut_nocommwarntime }}
+
+# Grace period between the last warning and pulling the plug.
+FINALDELAY {{ nut_finaldelay }}

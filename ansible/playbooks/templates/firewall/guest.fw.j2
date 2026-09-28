@@ -1,0 +1,13 @@
+{# Managed by Ansible (firewall.yml). Do not edit by hand. #}
+[OPTIONS]
+enable: 1
+policy_in: DROP
+
+[RULES]
+{% for rule in guest.rules %}
+IN ACCEPT -p {{ rule.proto }} -dport {{ rule.port }} -source +{{ rule.source }}
+{% endfor %}
+
+# SSH - break-glass laptop and Tailscale, same as every other guest
+IN ACCEPT -p tcp -dport 22 -source +lan_laptop
+IN ACCEPT -p tcp -dport 22 -source +ts_net

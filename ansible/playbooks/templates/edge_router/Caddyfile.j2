@@ -11,8 +11,7 @@
 ({{ service }}) {
   bind {{ edge_tailscale_ip }} {{ ansible_host }}
   encode {{ attrs.encodings | join(' ') }}
-  # Errors only - successful requests aren't logged, so this stays quiet
-  # until something actually fails.
+{# Log failed requests only. #}
   log {
     level ERROR
   }
@@ -25,19 +24,14 @@
 {% endfor %}
 {% endif %}
     transport http {
-      # Without this, a backend whose host is powered off drops our SYNs and
-      # the browser hangs on the OS TCP timeout (minutes) instead of getting
-      # the error page below.
+{# Short, or a powered-off backend hangs the browser instead of showing the error page. #}
       dial_timeout {{ edge_dial_timeout }}
 {% for directive in rp.transport_http | default([]) %}
       {{ directive }}
 {% endfor %}
     }
-    # A gateway 5xx from the app itself (as opposed to Caddy failing to
-    # reach it) means it's up but not serving yet - typically still waiting
-    # on its database. 500 is deliberately not intercepted: that's an
-    # application error on a real response, and replacing it with HTML would
-    # break API clients.
+{# A gateway 5xx from the app itself: up, but not serving yet. 500 is left
+   alone - it's a real app error, and HTML would break API clients. #}
     @backend_unready status 502 503 504
     handle_response @backend_unready {
       header Cache-Control "no-store"
@@ -49,15 +43,8 @@
     }
   }
 {% endfor %}
-  # Errors Caddy generates itself.
-  #
-  # This deliberately doesn't try to tell "stopped" from "still booting":
-  # published container ports are DNAT'd straight to the container, so a
-  # container whose app hasn't bound its port yet refuses the connection
-  # exactly like a stopped stack does. (The accept-then-drop behaviour that
-  # would distinguish them only happens on the docker host's own loopback,
-  # via docker-proxy - not on the path Caddy takes.) The page covers both
-  # and keeps retrying until one of them resolves.
+{# No response at all. Stopped and still-booting look identical from here -
+   see docs/Ansible/edge-router.md. #}
   handle_errors 502 503 504 {
     header Cache-Control "no-store"
     root * {{ edge_errors_container_dir }}

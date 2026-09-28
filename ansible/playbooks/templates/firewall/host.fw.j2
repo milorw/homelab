@@ -1,0 +1,32 @@
+{# Managed by Ansible (firewall.yml). Do not edit by hand. #}
+[OPTIONS]
+enable: {{ 1 if firewall_host_enabled | default(false) | bool else 0 }}
+
+# No policy_in here. It is a datacenter/guest option, and Proxmox refuses
+# to parse it in host.fw:
+#   /etc/pve/nodes/<node>/host.fw (line 3): can't parse option 'policy_in: DROP'
+# The host's default-deny comes from policy_in in cluster.fw, which covers
+# the node as well as any guest that doesn't set its own.
+
+[RULES]
+# Proxmox web UI.
+#
+# ts_net, not ts_host: ts_host is this node's OWN tailnet address, and
+# inbound packets carry the PEER's address, so a rule sourced on ts_host
+# could never match. Using it here would have blocked exactly the remote
+# access this is meant to allow. Guest rules already use ts_net for the
+# same reason, and that is verified working.
+IN ACCEPT -p tcp -dport 8006 -source +lan_laptop
+IN ACCEPT -p tcp -dport 8006 -source +ts_net
+
+# Caddy reverse-proxies the web UI as proxmox.<domain>, so the edge router
+# needs to reach 8006 directly. Without this the UI works on the LAN and
+# over Tailscale but 502s through the proxy.
+IN ACCEPT -p tcp -dport 8006 -source +edge_router
+
+# Host SSH - fallback management path if the edge router is down, and how
+# Ansible reaches proxmox_nodes. Same ts_net reasoning as above; this is
+# the break-glass path, so getting the source set wrong here is the
+# expensive mistake.
+IN ACCEPT -p tcp -dport 22 -source +lan_laptop
+IN ACCEPT -p tcp -dport 22 -source +ts_net

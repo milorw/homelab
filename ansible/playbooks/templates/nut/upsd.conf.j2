@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+# /etc/nut/upsd.conf - the network server that hands UPS state to upsmon.
+#
+# With no LISTEN directive, upsd binds 127.0.0.1:3493 only, which is what
+# standalone mode wants: nothing outside this host can reach it.
+
+{% for listen in nut_listen %}
+LISTEN {{ listen.address }} {{ listen.port | default(3493) }}
+{% else %}
+# No LISTEN directives - upsd defaults to localhost only.
+{% endfor %}

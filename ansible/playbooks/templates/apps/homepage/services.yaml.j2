@@ -1,13 +1,6 @@
 {# Managed by Ansible (docker-apps.yml). Do not edit by hand. #}
-{#
-  Generated from the edge router's own vars, so the dashboard and the
-  reverse proxy can't drift apart. Only services every domain in
-  edge_domains carries are listed, and homepage itself is left out.
-
-  A service with an entry in homepage_widgets gets that widget and no
-  href; everything else gets a plain link. Display name, icon, blurb and
-  group come from homepage_service_meta, which is optional per service.
-#}
+{# Services on every domain, from the service catalog (minus homepage itself).
+   A service in homepage_widgets gets that widget instead of a link. #}
 {% set edge = hostvars[groups['edge_router'][0]] %}
 {% set ns = namespace(shared=[], members=[], in_all=true) %}
 {% for service in (edge.edge_domains.values() | list | first).services %}

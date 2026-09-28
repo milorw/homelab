@@ -1,18 +1,9 @@
 {# Managed by Ansible (edge-router.yml). Do not edit by hand.
 
-   Rendered once per mode by the "Render error pages" task:
-     unreachable - Caddy got no response at all. Covers stopped, restarting
-                   and still-booting alike: from the edge router those are
-                   the same connection refused, because a published port is
-                   DNAT'd to the container whether or not the app inside has
-                   bound it yet. This is the page you'll normally see.
-     starting    - the app answered with a gateway 5xx of its own, so it's
-                   definitely up but not serving. Rare here: these apps bind
-                   their port only once they're ready, so they fail the
-                   other way.
-
-   Everything is inline: this page is served precisely when the app host is
-   down, so it can't reference anything that lives over there. #}
+   Rendered once per mode: `unreachable` (Caddy got no response - the page
+   you'll normally see) and `starting` (the app answered a gateway 5xx
+   itself). Everything is inline, since it's served exactly when the app
+   host is down. See docs/Ansible/edge-router.md. #}
 <!doctype html>
 <html lang="en">
   <head>

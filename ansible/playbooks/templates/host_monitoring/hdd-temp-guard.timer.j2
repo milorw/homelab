@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Run the HDD temperature guard every {{ hdd_temp_guard_interval }}
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ hdd_temp_guard_interval }}
+AccuracySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

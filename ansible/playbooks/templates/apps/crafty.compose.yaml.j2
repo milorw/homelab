@@ -16,7 +16,5 @@ services:
       - "{{ crafty_servers_dir }}:/crafty/servers"
       - "{{ crafty_root }}/config:/crafty/app/config"
       - "{{ crafty_root }}/import:/crafty/import"
-      # Java 25 isn't bundled in Crafty's image (only 8/11/17) - bind-mount
-      # the host's pinned install so it can be selected as a server's Java
-      # Path in the web UI. Same path inside and outside the container.
+      # Crafty only bundles Java 8/11/17 - share the host's pinned Java 25.
       - "{{ java_home }}:{{ java_home }}:ro"

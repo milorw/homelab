@@ -60,17 +60,13 @@ resource "proxmox_virtual_environment_container" "minecraft" {
     mac_address = "BC:24:11:2F:EE:D7"
   }
 
-  # Host bind mount on SSD, not an LXC-owned volume - survives a rebuild.
-  # World data ONLY: this is the host's boot drive, so nothing else goes
-  # here. Crafty keeps world data entirely under /crafty/servers.
+  # SSD host path, for world data ONLY - it's the host's boot drive.
   mount_point {
     volume = local.storage.ssd_minecraft
     path   = "/srv/minecraft"
   }
 
-  # Everything else Crafty needs to persist but not to be fast: its config
-  # (SQLite DB, users, server definitions), logs, import staging and
-  # backups. Keeps the boot SSD free of anything but world data.
+  # Everything else Crafty persists (config, logs, imports, backups).
   mount_point {
     volume = local.storage.tank_appdata
     path   = "/srv/appdata"

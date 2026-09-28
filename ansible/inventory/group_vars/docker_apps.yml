@@ -1,7 +1,5 @@
 # Vars for the docker_apps group.
 
-apps_root: /opt/apps
-
 # --- sure ---
 sure_postgres_user: sure_user
 sure_postgres_db: sure_production

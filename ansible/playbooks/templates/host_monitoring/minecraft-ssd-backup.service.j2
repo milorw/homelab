@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Back up the minecraft SSD volume to the tank pool
+Documentation=https://github.com/milorw/proxmox_ansible_playbooks
+After=zfs.target
+Requires=zfs.target
+
+[Service]
+Type=oneshot
+ExecStart={{ pve_monitoring_bin }}/minecraft-ssd-backup.sh
+SyslogIdentifier=minecraft-ssd-backup
+
+# Reading the whole volume and compressing it should never compete with
+# the server it is backing up.
+Nice=19
+IOSchedulingClass=idle

@@ -3,14 +3,8 @@
   gather_facts: false
 
   vars:
-    # Two persistent bind mounts (see terraform/lxc-minecraft.tf):
-    #   mc_dir      - SSD host path, for world data only. The SSD is the
-    #                 host's boot drive, so nothing else goes here.
-    #   appdata_dir - bulk HDD pool, for everything that just needs to
-    #                 persist rather than be fast.
-    # Crafty separates cleanly along that line: world data is entirely
-    # under /crafty/servers, and its config/logs/import/backups are
-    # independent mounts.
+    # Bind mounts from terraform/lxc-minecraft.tf: SSD for world data only,
+    # HDD pool for everything else - see docs/Ansible/minecraft.md.
     mc_dir: /srv/minecraft
     appdata_dir: /srv/appdata
 

@@ -1,0 +1,18 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Hourly ZFS snapshots
+
+[Timer]
+OnCalendar={{ snapshot_schedules.hourly }}
+
+# Spread the four frequencies off each other and off the backup jobs. They
+# would not conflict - snapshots are atomic and take no lock - but tidier
+# journals are worth a free minute.
+RandomizedDelaySec={{ snapshot_randomized_delay }}
+
+# A host that was off when the timer was due still gets its snapshot, so a
+# weekend of downtime does not leave a hole in the retention chain.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

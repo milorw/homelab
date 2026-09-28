@@ -1,0 +1,133 @@
+# Shared by both plays in update-packages.yml - see
+# docs/Ansible/package-updates.md. Expects update_scope, update_upgrade_mode
+# and update_backup (LXCs only - backups are taken on the Proxmox host).
+
+- name: Refresh the package lists
+  ansible.builtin.apt:
+    update_cache: true
+  changed_when: false
+
+- name: List upgradable packages
+  ansible.builtin.command: apt list --upgradable
+  register: upgradable_raw
+  changed_when: false
+  check_mode: false
+
+# Security updates are the ones offered from a *-security suite, e.g.
+# "openssl/stable-security 3.5.4-1~deb13u1 amd64 [upgradable from: ...]".
+- name: Work out what to update
+  ansible.builtin.set_fact:
+    pending_updates: >-
+      {{ upgradable_raw.stdout_lines
+         | select('search', '/')
+         | select('search', '-security' if update_scope == 'security' else '')
+         | map('regex_replace', '/.*$', '')
+         | list }}
+
+- name: Show what will be updated
+  ansible.builtin.debug:
+    msg: "{{ pending_updates if pending_updates else 'Nothing to update (' ~ update_scope ~ ')' }}"
+
+# --- Before: record the current state, so the check afterwards only fails
+# on things this update broke, not on something that was already down. ---
+
+- name: Record failed units before  # noqa: command-instead-of-module - the systemd module can't list failed units
+  ansible.builtin.command: systemctl list-units --failed --plain --no-legend --no-pager
+  register: failed_before
+  changed_when: false
+  check_mode: false
+  when: pending_updates | length > 0
+
+- name: Record running containers before
+  ansible.builtin.shell: command -v docker >/dev/null && docker ps --format '{{ "{{" }}.Names{{ "}}" }}' || true
+  register: containers_before
+  changed_when: false
+  check_mode: false
+  when: pending_updates | length > 0
+
+# --- Rollback point (LXCs only) ---
+# A vzdump backup, not a snapshot: pct snapshot refuses containers with bind
+# mounts, while vzdump just leaves them out. Only the container's own disk
+# is backed up, so restoring it never touches app data on /tank.
+
+# keep-all=1: skip the storage's pruning - old pre-update backups are
+# removed below instead, so nothing else is ever deleted.
+# legacy-sendmail with no --mailto: no notification email for this run only
+# (a failure still stops the play). Deprecated - if a PVE upgrade drops it,
+# this task fails and nothing gets updated.
+# If this fails, the play stops here - nothing gets updated without one.
+- name: Back up the container before updating
+  ansible.builtin.command: >-
+    vzdump {{ proxmox_vmid }} --mode snapshot --compress zstd
+    --storage {{ update_backup_storage }} --prune-backups keep-all=1
+    --notification-mode legacy-sendmail
+    --notes-template "{{ update_backup_notes }}"
+  delegate_to: "{{ groups['proxmox_nodes'][0] }}"
+  become: true
+  changed_when: true
+  when: update_backup and pending_updates | length > 0
+
+- name: List this container's pre-update backups
+  ansible.builtin.command: >-
+    pvesh get /nodes/localhost/storage/{{ update_backup_storage }}/content
+    --content backup --vmid {{ proxmox_vmid }} --output-format json
+  delegate_to: "{{ groups['proxmox_nodes'][0] }}"
+  become: true
+  register: pre_update_backups
+  changed_when: false
+  check_mode: false
+  when: update_backup and pending_updates | length > 0
+
+# Keep only the newest. Matched on the notes, so manual or scheduled
+# backups of the same container are never touched.
+- name: Remove older pre-update backups
+  ansible.builtin.command: pvesm free {{ item.volid }}
+  delegate_to: "{{ groups['proxmox_nodes'][0] }}"
+  become: true
+  changed_when: true
+  loop: >-
+    {{ (pre_update_backups.stdout | from_json
+        | selectattr('notes', 'defined')
+        | selectattr('notes', 'eq', update_backup_notes)
+        | sort(attribute='ctime'))[:-1] }}
+  loop_control:
+    label: "{{ item.volid }}"
+  when: update_backup and pending_updates | length > 0 and not ansible_check_mode
+
+# --- Update ---
+
+# state: latest - with the default `present`, already-installed packages
+# count as done and nothing is upgraded.
+- name: Apply security updates
+  ansible.builtin.apt:
+    name: "{{ pending_updates }}"
+    state: latest
+    only_upgrade: true
+  when: update_scope == 'security' and pending_updates | length > 0
+
+- name: Apply all updates
+  ansible.builtin.apt:
+    upgrade: "{{ update_upgrade_mode }}"
+  when: update_scope == 'all' and pending_updates | length > 0
+
+# --- After: nothing that was working may have stopped ---
+
+- name: Check no unit failed because of the update  # noqa: command-instead-of-module - the systemd module can't list failed units
+  ansible.builtin.command: systemctl list-units --failed --plain --no-legend --no-pager
+  register: failed_after
+  changed_when: false
+  failed_when: >-
+    (failed_after.stdout_lines | map('split') | map('first') | list)
+    | difference(failed_before.stdout_lines | map('split') | map('first') | list)
+    | length > 0
+  when: pending_updates | length > 0 and not ansible_check_mode
+
+# A docker upgrade restarts the daemon, so give containers time to come back.
+- name: Check every container that was running is running again
+  ansible.builtin.shell: docker ps --format '{{ "{{" }}.Names{{ "}}" }}'
+  register: containers_after
+  changed_when: false
+  until: containers_before.stdout_lines | difference(containers_after.stdout_lines) | length == 0
+  retries: 12
+  delay: 5
+  when: pending_updates | length > 0 and not ansible_check_mode and containers_before.stdout_lines | length > 0

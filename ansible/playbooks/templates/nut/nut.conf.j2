@@ -1,0 +1,13 @@
+# {{ ansible_managed }}
+# /etc/nut/nut.conf - which NUT daemons run on this machine.
+#
+# standalone: this host drives the UPS over USB *and* monitors it itself.
+# If an LXC ever needs to monitor this UPS too, this becomes `netserver`
+# and upsd.conf grows a LISTEN line - see nut_listen in group_vars.
+
+MODE={{ nut_mode }}
+
+# Read by /lib/systemd/system-shutdown/nutshutdown. If the UPS hasn't cut
+# output within this many seconds - which is what happens when mains comes
+# back mid-shutdown - reboot rather than sit powered off indefinitely.
+POWEROFF_WAIT={{ nut_poweroff_wait }}

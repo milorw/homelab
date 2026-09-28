@@ -77,20 +77,15 @@ resource "proxmox_virtual_environment_container" "jellyfin" {
     gid  = 44
   }
 
-  # Media library. The mount path is deliberately /opt/jellyfin rather
-  # than something tidier: every library path in Jellyfin's database is
-  # absolute, so changing it would orphan all libraries and force a
-  # full rescan.
+  # Media library. Don't move the path - library paths in the database are absolute.
   mount_point {
     volume = local.storage.tank_jellyfin
     path   = "/opt/jellyfin"
   }
 
-  # Config and library database, on /tank/appdata like every other
-  # service - but mounted ONTO Jellyfin's own default paths.
+  # Config and library database, mounted onto Jellyfin's own default paths.
 
-  # Only this service's own data is mounted, not the whole of
-  # /tank/appdata, so the container cannot see other services' state.
+  # Only its own data, not all of /tank/appdata.
 
   mount_point {
     volume = "${local.storage.tank_appdata}/jellyfin_data/data"

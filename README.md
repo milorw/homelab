@@ -24,7 +24,7 @@ Proxmox also hosts a "router" LXC (Caddy + CoreDNS + HAProxy), which provides cu
 | 106 | `jellyfin` | Jellyfin, with Intel VAAPI transcoding | `lxc-jellyfin.yml` |
 | 110 | `minecraft` | Crafty Controller running a Paper server (Docker Compose) | `lxc-minecraft.yml` |
 
-`lxc-baseline.yml` applies settings shared by every LXC.
+`lxc-baseline.yml` applies settings shared by every LXC. `update-packages.yml` applies security updates to every LXC and the host, one at a time, with a backup first - see `docs/Ansible/package-updates.md`.
 
 ## Repository layout
 

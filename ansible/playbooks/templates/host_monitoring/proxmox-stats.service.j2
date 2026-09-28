@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Proxmox host and ZFS stats reporter
+Documentation=https://github.com/milorw/proxmox_ansible_playbooks
+After=multi-user.target zfs.target
+
+[Service]
+Type=oneshot
+ExecStart={{ pve_monitoring_bin }}/proxmox-stats.sh
+SyslogIdentifier=proxmox-stats
